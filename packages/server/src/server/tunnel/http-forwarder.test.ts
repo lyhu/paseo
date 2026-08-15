@@ -3,6 +3,8 @@ import { createServer, request } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { forwardHttpRequest } from "./http-forwarder.js";
 
+/* eslint-disable max-nested-callbacks -- real HTTP fixture lifecycle is callback-driven. */
+
 const closers: Array<() => Promise<void>> = [];
 
 afterEach(async () => {

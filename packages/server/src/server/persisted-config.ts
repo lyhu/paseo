@@ -16,6 +16,7 @@ import {
   TerminalProfileSchema,
 } from "@getpaseo/protocol/messages";
 import { PaseoServicePortAllocationSchema } from "@getpaseo/protocol/paseo-config-schema";
+import { PersistedTunnelConfigSchema } from "./tunnel/config.js";
 
 export const LogLevelSchema = z.enum(["trace", "debug", "info", "warn", "error", "fatal"]);
 export const LogFormatSchema = z.enum(["pretty", "json"]);
@@ -293,6 +294,7 @@ export const PersistedConfigSchema = z
           .strict()
           .optional(),
         auth: DaemonAuthSchema.optional(),
+        tunnel: z.lazy(() => PersistedTunnelConfigSchema).optional(),
       })
       .strict()
       .transform(({ allowedHosts, ...daemon }) => {

@@ -1,5 +1,6 @@
 import type { TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
+import { tunnelSettings } from "./tunnel-settings";
 
 export const es: TranslationResources = {
   common: {
@@ -1831,8 +1832,10 @@ export const es: TranslationResources = {
       usage: "Uso",
       terminals: "Terminals",
       plugins: "Plugins",
+      tunnel: "Tunnel",
       host: "Resumen",
     },
+    tunnel: tunnelSettings.en,
     plugins: pluginSettings.es,
     metadataGeneration: {
       title: "Generación de metadatos",

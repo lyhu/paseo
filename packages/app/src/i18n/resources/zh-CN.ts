@@ -1,5 +1,6 @@
 import type { TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
+import { tunnelSettings } from "./tunnel-settings";
 
 export const zhCN: TranslationResources = {
   common: {
@@ -1768,8 +1769,10 @@ export const zhCN: TranslationResources = {
       usage: "使用情况",
       terminals: "Terminals",
       plugins: "插件",
+      tunnel: "隧道",
       host: "概览",
     },
+    tunnel: tunnelSettings["zh-CN"],
     plugins: pluginSettings["zh-CN"],
     metadataGeneration: {
       title: "元数据生成",

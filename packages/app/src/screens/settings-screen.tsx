@@ -38,6 +38,7 @@ import {
   Smartphone,
   Sparkles,
   Blocks,
+  Cable,
 } from "lucide-react-native";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
@@ -110,6 +111,7 @@ import {
   HostTerminalsPage,
 } from "@/screens/settings/host-page";
 import { HostPluginsPage } from "@/screens/settings/plugins-page";
+import { TunnelPrototypePage } from "@/screens/settings/tunnel-prototype-page";
 import { MetadataGenerationPage } from "@/screens/settings/metadata-generation-page";
 import ProjectsScreen from "@/screens/projects-screen";
 import ProjectSettingsScreen from "@/screens/project-settings-screen";
@@ -194,6 +196,7 @@ const HOST_SECTION_ITEMS: HostSectionItem[] = [
   { id: "usage", labelKey: "settings.hostSections.usage", icon: Gauge },
   { id: "terminals", labelKey: "settings.hostSections.terminals", icon: SquareTerminal },
   { id: "plugins", labelKey: "settings.hostSections.plugins", icon: Blocks },
+  { id: "tunnel", labelKey: "settings.hostSections.tunnel", icon: Cable },
 ];
 
 function renderHostSettingsContent(
@@ -221,6 +224,8 @@ function renderHostSettingsContent(
       return <HostTerminalsPage serverId={view.serverId} />;
     case "plugins":
       return <HostPluginsPage serverId={view.serverId} />;
+    case "tunnel":
+      return <TunnelPrototypePage serverId={view.serverId} />;
     case "host":
       return <HostSettingsPage serverId={view.serverId} onHostRemoved={onHostRemoved} />;
   }

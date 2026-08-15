@@ -1,5 +1,6 @@
 import type { TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
+import { tunnelSettings } from "./tunnel-settings";
 
 export const ko: TranslationResources = {
   common: {
@@ -1798,8 +1799,10 @@ export const ko: TranslationResources = {
       usage: "사용량",
       terminals: "터미널",
       plugins: "플러그인",
+      tunnel: "Tunnel",
       host: "개요",
     },
+    tunnel: tunnelSettings.en,
     plugins: pluginSettings.ko,
     metadataGeneration: {
       title: "메타데이터 생성",

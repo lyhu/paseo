@@ -119,6 +119,7 @@ function decodeResponseHead(value: Record<string, unknown>): TunnelFrame {
 
 export class TunnelCreditWindow {
   #usedBytes = 0;
+  #outstandingChunks: number[] = [];
 
   get usedBytes(): number {
     return this.#usedBytes;
@@ -130,13 +131,38 @@ export class TunnelCreditWindow {
       throw new Error("Tunnel credit window exhausted");
     }
     this.#usedBytes += bytes;
+    this.#outstandingChunks.push(bytes);
   }
 
   acknowledge(bytes: number): void {
     assertChunkByteLength(bytes);
-    if (bytes > this.#usedBytes)
-      throw new Error("Tunnel acknowledgement exceeds outstanding credit");
+    const oldest = this.#outstandingChunks[0];
+    if (oldest === undefined) throw new Error("Tunnel acknowledgement has no outstanding chunk");
+    if (bytes !== oldest) {
+      throw new Error("Tunnel acknowledgement does not match oldest outstanding chunk");
+    }
+    this.#outstandingChunks.shift();
     this.#usedBytes -= bytes;
+  }
+}
+
+export class TunnelStreamOrder {
+  #phase: "waiting-head" | "body" | "ended" = "waiting-head";
+
+  acceptHead(): void {
+    if (this.#phase !== "waiting-head") throw new Error("Tunnel stream has duplicate head");
+    this.#phase = "body";
+  }
+
+  acceptBody(): void {
+    if (this.#phase === "waiting-head") throw new Error("Tunnel stream has body before head");
+    if (this.#phase === "ended") throw new Error("Tunnel stream has body after end");
+  }
+
+  acceptEnd(): void {
+    if (this.#phase === "waiting-head") throw new Error("Tunnel stream has end before head");
+    if (this.#phase === "ended") throw new Error("Tunnel stream has duplicate end");
+    this.#phase = "ended";
   }
 }
 

@@ -52,6 +52,11 @@ describe("Tunnel entry form model", () => {
 
   it("keeps optional egress access credentials in the form state", () => {
     const form = openTunnelEntryForm({ kind: "egress", mode: "create" });
+    expect(form.getState()).toMatchObject({
+      accessMode: "header",
+      listenHost: "127.0.0.1",
+    });
+
     form.setAccessMode("bearer");
     form.setAccessToken("custom-token");
 
@@ -60,10 +65,22 @@ describe("Tunnel entry form model", () => {
       accessToken: "custom-token",
     });
   });
+
+  it("accepts only the two listener scopes", () => {
+    const form = openTunnelEntryForm({ kind: "egress", mode: "create", offer });
+    form.setName("Public API");
+    expect(form.getState()).toMatchObject({ canSubmit: true, listenPort: "8080" });
+
+    form.setListenHost("192.168.1.20");
+    expect(form.getState().canSubmit).toBe(false);
+
+    form.setListenHost("0.0.0.0");
+    expect(form.getState().canSubmit).toBe(true);
+  });
 });
 
 const offer = {
-  protocolVersion: 1,
+  protocolVersion: 1 as const,
   relayEndpoint: "wss://relay.example.test",
   relayUseTls: true,
   tunnelServerId: "tunnel_1",

@@ -7,11 +7,13 @@ export type TunnelAccessMode = "bearer" | "header" | "none";
 export interface TunnelEntryFormSnapshot {
   kind: TunnelEntryFormKind;
   mode: TunnelEntryFormMode;
+  offer?: RouteOffer;
   entry?: {
     id: string;
     name: string;
     targetOrigin?: string;
     listen?: { host: string; port: number };
+    accessMode?: TunnelAccessMode;
   };
 }
 
@@ -76,6 +78,16 @@ function isListenPort(value: string): boolean {
   return Number.isInteger(port) && port > 0 && port <= 65_535;
 }
 
+function isListenHost(value: string): boolean {
+  return value === "127.0.0.1" || value === "0.0.0.0";
+}
+
+function initialListenPort(snapshot: TunnelEntryFormSnapshot): string {
+  if (snapshot.entry?.listen) return String(snapshot.entry.listen.port);
+  if (snapshot.offer) return String(snapshot.offer.suggestedPort);
+  return "";
+}
+
 function deriveState(state: TunnelEntryFormState): TunnelEntryFormState {
   const name = state.name.trim();
   if (state.kind === "ingress") {
@@ -87,7 +99,7 @@ function deriveState(state: TunnelEntryFormState): TunnelEntryFormState {
   if (state.kind === "token") return { ...state, canSubmit: true };
   const canSubmit =
     Boolean(name) &&
-    Boolean(state.listenHost.trim()) &&
+    isListenHost(state.listenHost) &&
     isListenPort(state.listenPort) &&
     (state.mode === "edit" || parseRouteOffer(state.routeOfferText) !== null);
   return { ...state, canSubmit };
@@ -102,10 +114,10 @@ export function openTunnelEntryForm(snapshot: TunnelEntryFormSnapshot): TunnelEn
     entryId: snapshot.entry?.id ?? null,
     name: snapshot.entry?.name ?? "",
     targetOrigin: snapshot.entry?.targetOrigin ?? "",
-    routeOfferText: "",
+    routeOfferText: snapshot.offer ? JSON.stringify(snapshot.offer) : "",
     listenHost: snapshot.entry?.listen?.host ?? "127.0.0.1",
-    listenPort: snapshot.entry?.listen ? String(snapshot.entry.listen.port) : "",
-    accessMode: "none",
+    listenPort: initialListenPort(snapshot),
+    accessMode: snapshot.entry?.accessMode ?? "header",
     accessToken: "",
     canSubmit: false,
     submitError: null,
@@ -134,7 +146,13 @@ export function openTunnelEntryForm(snapshot: TunnelEntryFormSnapshot): TunnelEn
       publish({ ...state, targetOrigin: value, submitError: null });
     },
     setRouteOfferText(value) {
-      publish({ ...state, routeOfferText: value, submitError: null });
+      const offer = parseRouteOffer(value);
+      publish({
+        ...state,
+        routeOfferText: value,
+        listenPort: state.listenPort || (offer ? String(offer.suggestedPort) : ""),
+        submitError: null,
+      });
     },
     setListenHost(value) {
       publish({ ...state, listenHost: value, submitError: null });

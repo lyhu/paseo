@@ -1,5 +1,13 @@
 /* oxlint-disable react-perf/jsx-no-jsx-as-prop -- SettingsSection owns the header action slot. */
-import { useCallback, useState, useSyncExternalStore, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { Text, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { StyleSheet } from "react-native-unistyles";
@@ -14,6 +22,7 @@ import { Field, FormTextInput } from "@/components/ui/form-field";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Switch } from "@/components/ui/switch";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { HostPicker } from "@/components/hosts/host-picker";
 import { useTunnelEntryFormModel } from "@/tunnel/use-tunnel-entry-form-model";
 import type {
   TunnelAccessMode,
@@ -22,8 +31,12 @@ import type {
   TunnelEntryFormState,
 } from "@/tunnel/tunnel-entry-form-model";
 import { useTunnelState } from "@/tunnel/tunnel-state";
-import { useHostFeature } from "@/runtime/host-features";
-import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
+import { useHostFeature, useHostFeatureMap } from "@/runtime/host-features";
+import {
+  useHostRuntimeConnectionStatuses,
+  useHostRuntimeIsConnected,
+  useHosts,
+} from "@/runtime/host-runtime";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { settingsStyles } from "@/styles/settings";
 import { confirmDialog } from "@/utils/confirm-dialog";
@@ -34,6 +47,11 @@ const ACCESS_MODE_OPTIONS: Array<{ value: TunnelAccessMode; label: string }> = [
   { value: "header", label: "Header" },
   { value: "bearer", label: "Bearer" },
   { value: "none", label: "None" },
+];
+
+const LISTEN_SCOPE_OPTIONS = [
+  { value: "127.0.0.1", label: "Local only" },
+  { value: "0.0.0.0", label: "All interfaces" },
 ];
 
 function errorMessage(error: unknown): string {
@@ -104,33 +122,48 @@ function EgressFields({
   state,
   model,
   pending,
+  selectedOffer,
 }: {
   state: TunnelEntryFormState;
   model: TunnelEntryFormModel;
   pending: boolean;
+  selectedOffer: RouteOffer | null;
 }) {
   return (
     <>
-      <Field label="Route Offer">
-        <FormTextInput
-          initialValue={state.routeOfferText}
-          onChangeText={model.setRouteOfferText}
-          editable={!pending}
-          autoCapitalize="none"
-          autoCorrect={false}
-          accessibilityLabel="Route Offer"
+      {selectedOffer ? (
+        <Field label="Source ingress">
+          <Text style={settingsStyles.rowHint}>
+            {selectedOffer.ingressHostName} / {selectedOffer.ingressName}
+          </Text>
+        </Field>
+      ) : (
+        <Field label="Route Offer">
+          <FormTextInput
+            initialValue={state.routeOfferText}
+            onChangeText={model.setRouteOfferText}
+            editable={!pending}
+            autoCapitalize="none"
+            autoCorrect={false}
+            accessibilityLabel="Route Offer"
+          />
+        </Field>
+      )}
+      <Field label="Listen scope">
+        <SegmentedControl
+          value={state.listenHost}
+          onValueChange={model.setListenHost}
+          options={LISTEN_SCOPE_OPTIONS}
+          size="sm"
         />
       </Field>
-      <Field label="Listener host">
-        <FormTextInput
-          initialValue={state.listenHost}
-          onChangeText={model.setListenHost}
-          editable={!pending}
-          autoCapitalize="none"
-          autoCorrect={false}
-          accessibilityLabel="Listener host"
+      {state.listenHost === "0.0.0.0" ? (
+        <Alert
+          variant="warning"
+          title="Listener exposed on all interfaces"
+          description="Firewall and network rules still apply. Paseo does not terminate TLS."
         />
-      </Field>
+      ) : null}
       <Field label="Listener port">
         <FormTextInput
           initialValue={state.listenPort}
@@ -169,6 +202,18 @@ function TunnelEntryEditor({
   const submit = useCallback(async () => {
     const offer = model.getRouteOffer();
     try {
+      if (
+        state.accessMode === "none" &&
+        ((state.kind === "egress" && state.mode === "create") || state.kind === "token") &&
+        !(await confirmDialog({
+          title: "Create listener without access control?",
+          message: "Any caller that can reach this listener can use the Tunnel.",
+          confirmLabel: "Use no authentication",
+          destructive: true,
+        }))
+      ) {
+        return;
+      }
       await onSubmit({
         name: state.name.trim(),
         targetOrigin: state.targetOrigin.trim(),
@@ -187,8 +232,10 @@ function TunnelEntryEditor({
     onSubmit,
     state.accessMode,
     state.accessToken,
+    state.kind,
     state.listenHost,
     state.listenPort,
+    state.mode,
     state.name,
     state.targetOrigin,
   ]);
@@ -223,7 +270,14 @@ function TunnelEntryEditor({
   } else if (state.kind === "token") {
     fields = <AccessFields state={state} model={model} pending={pending} />;
   } else {
-    fields = <EgressFields state={state} model={model} pending={pending} />;
+    fields = (
+      <EgressFields
+        state={state}
+        model={model}
+        pending={pending}
+        selectedOffer={snapshot.offer ?? null}
+      />
+    );
   }
 
   return (
@@ -253,19 +307,23 @@ function TunnelEntryEditor({
 function IngressRow({
   entry,
   pending,
+  result,
   onToggle,
   onEdit,
   onExport,
   onRotateSecret,
   onDelete,
+  onCopy,
 }: {
   entry: TunnelIngressState;
   pending: boolean;
+  result: { label: string; value: string; copied: boolean; error: string | null } | null;
   onToggle(entry: TunnelIngressState): void;
   onEdit(entry: TunnelIngressState): void;
   onExport(entry: TunnelIngressState): void;
   onRotateSecret(entry: TunnelIngressState): void;
   onDelete(entry: TunnelIngressState): void;
+  onCopy(): void;
 }) {
   const toggle = useCallback(() => onToggle(entry), [entry, onToggle]);
   const edit = useCallback(() => onEdit(entry), [entry, onEdit]);
@@ -302,6 +360,17 @@ function IngressRow({
           Delete
         </Button>
       </View>
+      {result ? (
+        <Alert
+          title={`${result.label} ready`}
+          description={result.error ?? result.value}
+          variant={result.error ? "error" : "default"}
+        >
+          <Button size="sm" onPress={onCopy} disabled={pending}>
+            {result.copied ? "Copied" : "Copy"}
+          </Button>
+        </Alert>
+      ) : null}
     </View>
   );
 }
@@ -364,37 +433,178 @@ function EgressRow({
   );
 }
 
+function EgressSourcePicker({
+  pending,
+  onCancel,
+  onSelect,
+}: {
+  pending: boolean;
+  onCancel(): void;
+  onSelect(offer: RouteOffer): void;
+}) {
+  const hosts = useHosts();
+  const hostIds = useMemo(() => hosts.map((host) => host.serverId), [hosts]);
+  const connectionStatuses = useHostRuntimeConnectionStatuses(hostIds);
+  const tunnelFeatures = useHostFeatureMap(hostIds, "httpTunnel");
+  const eligibleHosts = useMemo(
+    () =>
+      hosts.filter(
+        (host) =>
+          connectionStatuses.get(host.serverId) === "online" &&
+          tunnelFeatures.get(host.serverId) === true,
+      ),
+    [connectionStatuses, hosts, tunnelFeatures],
+  );
+  const [selectedHostId, setSelectedHostId] = useState(eligibleHosts[0]?.serverId ?? "");
+  const [selectedIngressId, setSelectedIngressId] = useState("");
+  const [hostPickerOpen, setHostPickerOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const hostPickerAnchorRef = useRef<View>(null);
+  const selectedHostSupported = tunnelFeatures.get(selectedHostId) === true;
+  const sourceTunnel = useTunnelState(selectedHostId, selectedHostSupported);
+  const ingresses = useMemo(
+    () => sourceTunnel.state.data?.ingresses.filter((ingress) => ingress.enabled) ?? [],
+    [sourceTunnel.state.data?.ingresses],
+  );
+
+  useEffect(() => {
+    if (eligibleHosts.some((host) => host.serverId === selectedHostId)) return;
+    setSelectedHostId(eligibleHosts[0]?.serverId ?? "");
+  }, [eligibleHosts, selectedHostId]);
+
+  useEffect(() => {
+    if (ingresses.some((ingress) => ingress.id === selectedIngressId)) return;
+    setSelectedIngressId(ingresses[0]?.id ?? "");
+  }, [ingresses, selectedIngressId]);
+
+  const selectHost = useCallback((nextHostId: string) => {
+    setSelectedHostId(nextHostId);
+    setSelectedIngressId("");
+    setError(null);
+  }, []);
+  const openHostPicker = useCallback(() => setHostPickerOpen(true), []);
+  const continueWithIngress = useCallback(async () => {
+    if (!selectedIngressId) return;
+    setIsExporting(true);
+    setError(null);
+    try {
+      const result = await sourceTunnel.exportOffer(selectedIngressId);
+      onSelect(result.offer);
+    } catch (exportError) {
+      setError(errorMessage(exportError));
+    } finally {
+      setIsExporting(false);
+    }
+  }, [onSelect, selectedIngressId, sourceTunnel]);
+  const selectedHostLabel =
+    eligibleHosts.find((host) => host.serverId === selectedHostId)?.label ?? "Select Host";
+
+  return (
+    <View style={[settingsStyles.card, styles.editor]}>
+      <Field label="Ingress Host">
+        <HostPicker
+          hosts={eligibleHosts}
+          value={selectedHostId}
+          onSelect={selectHost}
+          open={hostPickerOpen}
+          onOpenChange={setHostPickerOpen}
+          anchorRef={hostPickerAnchorRef}
+          title="Ingress Host"
+        >
+          <View ref={hostPickerAnchorRef}>
+            <Button
+              variant="outline"
+              size="sm"
+              onPress={openHostPicker}
+              disabled={pending || eligibleHosts.length === 0}
+              accessibilityLabel="Ingress Host"
+            >
+              {selectedHostLabel}
+            </Button>
+          </View>
+        </HostPicker>
+      </Field>
+      <Field label="Ingress">
+        {sourceTunnel.state.isLoading ? <Text>Loading ingresses…</Text> : null}
+        {!sourceTunnel.state.isLoading && ingresses.length > 0 ? (
+          <SegmentedControl
+            value={selectedIngressId}
+            onValueChange={setSelectedIngressId}
+            options={ingresses.map((ingress) => ({
+              value: ingress.id,
+              label: ingress.name,
+            }))}
+            size="sm"
+          />
+        ) : null}
+        {!sourceTunnel.state.isLoading && ingresses.length === 0 ? (
+          <Text style={settingsStyles.rowHint}>No enabled ingress on this Host</Text>
+        ) : null}
+      </Field>
+      {error ? <Alert variant="error" title={error} /> : null}
+      <View style={styles.actions}>
+        <Button variant="outline" size="sm" onPress={onCancel} disabled={isExporting}>
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          onPress={continueWithIngress}
+          disabled={!selectedIngressId || pending || isExporting}
+          loading={isExporting}
+        >
+          Continue
+        </Button>
+      </View>
+    </View>
+  );
+}
+
 export function TunnelPage({ serverId }: { serverId: string }) {
   const connected = useHostRuntimeIsConnected(serverId);
   const supported = useHostFeature(serverId, "httpTunnel");
   const { state, mutate, exportOffer } = useTunnelState(serverId, supported);
   const [editor, setEditor] = useState<EditorSnapshot | null>(null);
+  const [selectingEgressSource, setSelectingEgressSource] = useState(false);
+  const [editorResult, setEditorResult] = useState<{
+    label: string;
+    value: string;
+    copied: boolean;
+    error: string | null;
+  } | null>(null);
   const [feedback, setFeedback] = useState<{ kind: "success" | "error"; message: string } | null>(
     null,
   );
-  const [copyValue, setCopyValue] = useState<{ label: string; value: string } | null>(null);
+  const [copyValue, setCopyValue] = useState<{
+    ownerId: string;
+    label: string;
+    value: string;
+    copied: boolean;
+    error: string | null;
+  } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const pending = mutate.isPending || isExporting;
 
+  const commitMutation = useCallback(
+    async (mutation: Parameters<typeof mutate.mutateAsync>[0]) => {
+      setFeedback(null);
+      const result = await mutate.mutateAsync(mutation);
+      setFeedback({ kind: "success", message: "Saved" });
+      return result;
+    },
+    [mutate],
+  );
   const runMutation = useCallback(
     async (mutation: Parameters<typeof mutate.mutateAsync>[0]): Promise<boolean> => {
-      setFeedback(null);
       try {
-        const result = await mutate.mutateAsync(mutation);
-        setFeedback({
-          kind: "success",
-          message: result.oneTimeToken ? "Access token created" : "Saved",
-        });
-        if (result.oneTimeToken) {
-          setCopyValue({ label: "Access token", value: result.oneTimeToken });
-        }
+        await commitMutation(mutation);
         return true;
       } catch (error) {
         setFeedback({ kind: "error", message: errorMessage(error) });
         return false;
       }
     },
-    [mutate],
+    [commitMutation],
   );
   const submitEditor = useCallback(
     async (input: {
@@ -405,8 +615,9 @@ export function TunnelPage({ serverId }: { serverId: string }) {
       access: { mode: "bearer" | "header" | "none"; token?: string };
     }) => {
       if (!editor) return;
+      let result;
       if (editor.kind === "ingress") {
-        const saved = await runMutation(
+        result = await commitMutation(
           editor.mode === "create"
             ? { operation: "createIngress", name: input.name, targetOrigin: input.targetOrigin }
             : {
@@ -416,42 +627,46 @@ export function TunnelPage({ serverId }: { serverId: string }) {
                 targetOrigin: input.targetOrigin,
               },
         );
-        if (!saved) throw new Error("Request failed; retry.");
       } else if (editor.kind === "egress") {
         if (editor.mode === "create") {
-          const saved = await runMutation({
+          result = await commitMutation({
             operation: "createEgress",
             name: input.name,
             listen: input.listen,
             offer: requireRouteOffer(input.offer),
             access: input.access,
           });
-          if (!saved) throw new Error("Request failed; retry.");
         } else {
-          const saved = await runMutation({
+          result = await commitMutation({
             operation: "updateEgress",
             id: editor.entry?.id ?? "",
             name: input.name,
             listen: input.listen,
           });
-          if (!saved) throw new Error("Request failed; retry.");
         }
       } else if (editor.kind === "offer") {
-        const saved = await runMutation({
+        result = await commitMutation({
           operation: "replaceEgressOffer",
           id: editor.entry?.id ?? "",
           offer: requireRouteOffer(input.offer),
         });
-        if (!saved) throw new Error("Request failed; retry.");
       } else {
-        const saved = await runMutation(
+        result = await commitMutation(
           rotateTokenMutation({ id: editor.entry?.id ?? "", access: input.access }),
         );
-        if (!saved) throw new Error("Request failed; retry.");
       }
-      setEditor(null);
+      if (result.oneTimeToken) {
+        setEditorResult({
+          label: "Access token",
+          value: result.oneTimeToken,
+          copied: false,
+          error: null,
+        });
+      } else {
+        setEditor(null);
+      }
     },
-    [editor, runMutation],
+    [commitMutation, editor],
   );
   const deleteIngress = useCallback(
     async (entry: TunnelIngressState) => {
@@ -488,8 +703,13 @@ export function TunnelPage({ serverId }: { serverId: string }) {
       setIsExporting(true);
       try {
         const result = await exportOffer(entry.id);
-        setCopyValue({ label: "Route Offer", value: JSON.stringify(result.offer) });
-        setFeedback({ kind: "success", message: "Route Offer exported" });
+        setCopyValue({
+          ownerId: entry.id,
+          label: "Route Offer",
+          value: JSON.stringify(result.offer),
+          copied: false,
+          error: null,
+        });
       } catch (error) {
         setFeedback({ kind: "error", message: errorMessage(error) });
       } finally {
@@ -499,8 +719,23 @@ export function TunnelPage({ serverId }: { serverId: string }) {
     [exportOffer],
   );
   const openCreateIngress = useCallback(() => setEditor({ kind: "ingress", mode: "create" }), []);
-  const openCreateEgress = useCallback(() => setEditor({ kind: "egress", mode: "create" }), []);
-  const closeEditor = useCallback(() => setEditor(null), []);
+  const openCreateEgress = useCallback(() => {
+    setEditor(null);
+    setSelectingEgressSource(true);
+  }, []);
+  const importEgress = useCallback(() => {
+    setSelectingEgressSource(false);
+    setEditor({ kind: "egress", mode: "create" });
+  }, []);
+  const useSelectedOffer = useCallback((offer: RouteOffer) => {
+    setSelectingEgressSource(false);
+    setEditor({ kind: "egress", mode: "create", offer });
+  }, []);
+  const closeEditor = useCallback(() => {
+    setEditor(null);
+    setEditorResult(null);
+    setSelectingEgressSource(false);
+  }, []);
   const toggleIngress = useCallback(
     (entry: TunnelIngressState) => {
       void runMutation({ operation: "updateIngress", id: entry.id, enabled: !entry.enabled });
@@ -553,18 +788,32 @@ export function TunnelPage({ serverId }: { serverId: string }) {
     [],
   );
   const rotateEgressToken = useCallback(
-    (entry: TunnelEgressState) => setEditor({ kind: "token", mode: "edit", entry }),
+    (entry: TunnelEgressState) =>
+      setEditor({
+        kind: "token",
+        mode: "edit",
+        entry: { ...entry, accessMode: entry.access.mode },
+      }),
     [],
   );
   const copy = useCallback(async () => {
     if (!copyValue) return;
     try {
       await Clipboard.setStringAsync(copyValue.value);
-      setFeedback({ kind: "success", message: `${copyValue.label} copied` });
+      setCopyValue({ ...copyValue, copied: true, error: null });
     } catch (error) {
-      setFeedback({ kind: "error", message: errorMessage(error) });
+      setCopyValue({ ...copyValue, error: errorMessage(error) });
     }
   }, [copyValue]);
+  const copyEditorResult = useCallback(async () => {
+    if (!editorResult) return;
+    try {
+      await Clipboard.setStringAsync(editorResult.value);
+      setEditorResult({ ...editorResult, copied: true, error: null });
+    } catch (error) {
+      setEditorResult({ ...editorResult, error: errorMessage(error) });
+    }
+  }, [editorResult]);
 
   if (!connected) return <Alert variant="warning" title="Tunnel host is offline" />;
   if (!supported) return <Alert variant="warning" title="Update this Host to use Tunnel" />;
@@ -583,13 +832,6 @@ export function TunnelPage({ serverId }: { serverId: string }) {
     <View>
       <SettingsSection title="Tunnel">
         {feedback ? <Alert variant={feedback.kind} title={feedback.message} /> : null}
-        {copyValue ? (
-          <Alert title={`${copyValue.label} ready`} description={copyValue.value}>
-            <Button size="sm" onPress={copy}>
-              Copy
-            </Button>
-          </Alert>
-        ) : null}
         <View style={settingsStyles.card}>
           <View style={styles.row}>
             <Text style={settingsStyles.rowTitle}>Relay</Text>
@@ -614,11 +856,13 @@ export function TunnelPage({ serverId }: { serverId: string }) {
               key={entry.id}
               entry={entry}
               pending={pending}
+              result={copyValue?.ownerId === entry.id ? copyValue : null}
               onToggle={toggleIngress}
               onEdit={editIngress}
               onExport={exportIngressOffer}
               onRotateSecret={rotateIngressSecret}
               onDelete={removeIngress}
+              onCopy={copy}
             />
           ))}
           {!state.data.ingresses.length ? (
@@ -629,9 +873,14 @@ export function TunnelPage({ serverId }: { serverId: string }) {
       <SettingsSection
         title="Egress"
         trailing={
-          <Button size="sm" onPress={openCreateEgress} disabled={pending}>
-            Add egress
-          </Button>
+          <View style={styles.actions}>
+            <Button variant="outline" size="sm" onPress={importEgress} disabled={pending}>
+              Import egress
+            </Button>
+            <Button size="sm" onPress={openCreateEgress} disabled={pending}>
+              Add egress
+            </Button>
+          </View>
         }
       >
         <View style={settingsStyles.card}>
@@ -652,7 +901,10 @@ export function TunnelPage({ serverId }: { serverId: string }) {
           ) : null}
         </View>
       </SettingsSection>
-      {editor ? (
+      {selectingEgressSource ? (
+        <EgressSourcePicker pending={pending} onCancel={closeEditor} onSelect={useSelectedOffer} />
+      ) : null}
+      {editor && !editorResult ? (
         <TunnelEntryEditor
           key={`${editor.kind}:${editor.mode}:${editor.entry?.id ?? "new"}`}
           snapshot={editor}
@@ -660,6 +912,22 @@ export function TunnelPage({ serverId }: { serverId: string }) {
           onCancel={closeEditor}
           onSubmit={submitEditor}
         />
+      ) : null}
+      {editorResult ? (
+        <View style={[settingsStyles.card, styles.editor]}>
+          <Alert
+            title={`${editorResult.label} ready`}
+            description={editorResult.error ?? editorResult.value}
+            variant={editorResult.error ? "error" : "default"}
+          >
+            <Button size="sm" onPress={copyEditorResult}>
+              {editorResult.copied ? "Copied" : "Copy"}
+            </Button>
+          </Alert>
+          <Button variant="outline" size="sm" onPress={closeEditor}>
+            Done
+          </Button>
+        </View>
       ) : null}
     </View>
   );

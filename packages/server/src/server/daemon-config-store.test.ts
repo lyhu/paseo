@@ -279,6 +279,36 @@ describe("DaemonConfigStore", () => {
     expect(loadPersistedConfig(paseoHome).daemon?.browserTools?.enabled).toBeUndefined();
   });
 
+  test("a failed daemon patch does not overwrite a Tunnel mutation made during apply", () => {
+    const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
+    tempDirs.push(paseoHome);
+    const store = new DaemonConfigStore(paseoHome, {
+      relay: { enabled: false },
+      mcp: { injectIntoAgents: false },
+      browserTools: { enabled: false },
+      providers: {},
+      metadataGeneration: { providers: [] },
+      autoArchiveAfterMerge: false,
+      enableTerminalAgentHooks: false,
+      appendSystemPrompt: "",
+    });
+    store.onApply(() => {
+      store.setPersistedTunnelConfig({ ingresses: [], egresses: [] });
+      return () => {};
+    });
+    store.onApply(() => {
+      throw new Error("Later apply owner failed");
+    });
+
+    expect(() => store.patch({ browserTools: { enabled: true } })).toThrow(
+      "Later apply owner failed",
+    );
+
+    const persisted = loadPersistedConfig(paseoHome);
+    expect(persisted.daemon?.browserTools?.enabled).toBeUndefined();
+    expect(persisted.daemon?.tunnel).toEqual({ ingresses: [], egresses: [] });
+  });
+
   test("rejects relay patches when a launch override owns the setting", () => {
     const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
     tempDirs.push(paseoHome);

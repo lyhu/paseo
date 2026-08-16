@@ -11,6 +11,7 @@ import {
   decodeTunnelFrame,
   encodeTunnelFrame,
   TunnelCreditWindow,
+  TunnelStreamOrder,
   FRAME_BYTES,
   FLOW_WINDOW_CHUNKS,
   type TunnelFrame,
@@ -46,6 +47,7 @@ interface DataConnection {
   requestWindow: TunnelCreditWindow;
   responseWindow: TunnelCreditWindow;
   pendingRequestAcks: Array<{ bytes: number; resolve: () => void }>;
+  responseOrder: TunnelStreamOrder;
   finished: boolean;
   readyTimeout: ReturnType<typeof setTimeout> | null;
 }
@@ -170,6 +172,7 @@ export class EgressRuntime {
       requestWindow: new TunnelCreditWindow(),
       responseWindow: new TunnelCreditWindow(),
       pendingRequestAcks: [],
+      responseOrder: new TunnelStreamOrder(),
       finished: false,
       readyTimeout: null,
     };
@@ -282,27 +285,31 @@ export class EgressRuntime {
     const conn = this.#dataConnections.get(connectionId);
     if (!conn) return;
 
-    if (typeof data === "string") {
-      const frame = decodeTunnelFrame(data);
-      this.#handleControlFrame(connectionId, frame, res);
-    } else {
-      // Binary response body chunk
-      const buffer = Buffer.from(data);
-      conn.responseWindow.reserve(buffer.byteLength);
+    try {
+      if (typeof data === "string") {
+        const frame = decodeTunnelFrame(data);
+        this.#handleControlFrame(connectionId, frame, res);
+      } else {
+        conn.responseOrder.acceptBody();
+        const buffer = Buffer.from(data);
+        conn.responseWindow.reserve(buffer.byteLength);
 
-      if (!res.write(buffer)) {
-        res.once("drain", () => {
+        if (!res.write(buffer)) {
+          res.once("drain", () => {
+            void conn.channel?.send(
+              encodeTunnelFrame({ v: 1, type: "response.ack", bytes: buffer.byteLength }),
+            );
+            conn.responseWindow.acknowledge(buffer.byteLength);
+          });
+        } else {
           void conn.channel?.send(
             encodeTunnelFrame({ v: 1, type: "response.ack", bytes: buffer.byteLength }),
           );
           conn.responseWindow.acknowledge(buffer.byteLength);
-        });
-      } else {
-        void conn.channel?.send(
-          encodeTunnelFrame({ v: 1, type: "response.ack", bytes: buffer.byteLength }),
-        );
-        conn.responseWindow.acknowledge(buffer.byteLength);
+        }
       }
+    } catch {
+      void this.#failInvalidConnection(conn, res);
     }
   }
 
@@ -311,6 +318,7 @@ export class EgressRuntime {
     if (!conn) return;
 
     if (frame.type === "response.head") {
+      conn.responseOrder.acceptHead();
       const headers = sanitizeTunnelHeaders(frame.headers);
       if (frame.statusMessage) {
         res.writeHead(frame.statusCode, frame.statusMessage, tuplesToRawHeaders(headers));
@@ -321,6 +329,7 @@ export class EgressRuntime {
     }
 
     if (frame.type === "response.end") {
+      conn.responseOrder.acceptEnd();
       conn.finished = true;
       res.end();
       conn.ws.close(1000, "complete");
@@ -328,11 +337,13 @@ export class EgressRuntime {
     }
 
     if (frame.type === "request.ack") {
-      const pending = conn.pendingRequestAcks.shift();
-      if (pending && pending.bytes === frame.bytes) {
-        conn.requestWindow.acknowledge(frame.bytes);
-        pending.resolve();
+      const pending = conn.pendingRequestAcks[0];
+      if (!pending || pending.bytes !== frame.bytes) {
+        throw new Error("Invalid request acknowledgement");
       }
+      conn.requestWindow.acknowledge(frame.bytes);
+      conn.pendingRequestAcks.shift();
+      pending.resolve();
       return;
     }
 
@@ -343,6 +354,19 @@ export class EgressRuntime {
       conn.ws.close(1000, "tunnel error");
       return;
     }
+
+    throw new Error("Unexpected Tunnel frame");
+  }
+
+  async #failInvalidConnection(conn: DataConnection, res: ServerResponse): Promise<void> {
+    if (conn.finished) return;
+    conn.finished = true;
+    if (!res.headersSent) res.writeHead(502);
+    if (!res.writableEnded) res.end("Tunnel request failed");
+    if (conn.channel?.isOpen()) {
+      await conn.channel.send(encodeTunnelFrame({ v: 1, type: "error", code: "INVALID_REQUEST" }));
+    }
+    conn.ws.close(1000, "invalid tunnel frame");
   }
 
   #extractBearerToken(authorization: string | string[] | undefined): string | null {

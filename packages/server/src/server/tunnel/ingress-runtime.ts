@@ -11,6 +11,7 @@ import {
   decodeTunnelFrame,
   encodeTunnelFrame,
   TunnelCreditWindow,
+  TunnelStreamOrder,
   FRAME_BYTES,
   FLOW_WINDOW_CHUNKS,
   type TunnelFrame,
@@ -57,6 +58,7 @@ interface DataConnection {
   requestWindow: TunnelCreditWindow;
   responseWindow: TunnelCreditWindow;
   pendingResponseAcks: Array<{ bytes: number; resolve: () => void }>;
+  requestOrder: TunnelStreamOrder;
 }
 
 export class IngressRuntime {
@@ -244,6 +246,7 @@ export class IngressRuntime {
       requestWindow: new TunnelCreditWindow(),
       responseWindow: new TunnelCreditWindow(),
       pendingResponseAcks: [],
+      requestOrder: new TunnelStreamOrder(),
     };
     this.#dataConnections.set(connectionId, conn);
     this.#emitMetrics();
@@ -274,31 +277,32 @@ export class IngressRuntime {
     const conn = this.#dataConnections.get(connectionId);
     if (!conn) return;
 
-    if (typeof data === "string") {
-      const frame = decodeTunnelFrame(data);
-      this.#handleControlFrame(connectionId, frame);
-    } else {
-      // Binary request body chunk
-      if (!conn.upstream) {
-        conn.ws.close(1002, "body before head");
-        return;
-      }
-      const buffer = Buffer.from(data);
-      conn.requestWindow.reserve(buffer.byteLength);
+    try {
+      if (typeof data === "string") {
+        const frame = decodeTunnelFrame(data);
+        this.#handleControlFrame(connectionId, frame);
+      } else {
+        conn.requestOrder.acceptBody();
+        if (!conn.upstream) throw new Error("Missing upstream request");
+        const buffer = Buffer.from(data);
+        conn.requestWindow.reserve(buffer.byteLength);
 
-      if (!conn.upstream.write(buffer)) {
-        conn.upstream.once("drain", () => {
+        if (!conn.upstream.write(buffer)) {
+          conn.upstream.once("drain", () => {
+            void conn.channel.send(
+              encodeTunnelFrame({ v: 1, type: "request.ack", bytes: buffer.byteLength }),
+            );
+            conn.requestWindow.acknowledge(buffer.byteLength);
+          });
+        } else {
           void conn.channel.send(
             encodeTunnelFrame({ v: 1, type: "request.ack", bytes: buffer.byteLength }),
           );
           conn.requestWindow.acknowledge(buffer.byteLength);
-        });
-      } else {
-        void conn.channel.send(
-          encodeTunnelFrame({ v: 1, type: "request.ack", bytes: buffer.byteLength }),
-        );
-        conn.requestWindow.acknowledge(buffer.byteLength);
+        }
       }
+    } catch {
+      void this.#failConnection(conn, "INVALID_REQUEST");
     }
   }
 
@@ -307,6 +311,7 @@ export class IngressRuntime {
     if (!conn) return;
 
     if (frame.type === "request.head") {
+      conn.requestOrder.acceptHead();
       // Validate route
       const route = this.#routes.get(frame.routeId);
       if (!route) {
@@ -378,18 +383,29 @@ export class IngressRuntime {
     }
 
     if (frame.type === "request.end") {
-      conn.upstream?.end();
+      conn.requestOrder.acceptEnd();
+      if (!conn.upstream) throw new Error("Missing upstream request");
+      conn.upstream.end();
       return;
     }
 
     if (frame.type === "response.ack") {
-      const pending = conn.pendingResponseAcks.shift();
-      if (pending && pending.bytes === frame.bytes) {
-        conn.responseWindow.acknowledge(frame.bytes);
-        pending.resolve();
+      const pending = conn.pendingResponseAcks[0];
+      if (!pending || pending.bytes !== frame.bytes) {
+        throw new Error("Invalid response acknowledgement");
       }
+      conn.responseWindow.acknowledge(frame.bytes);
+      conn.pendingResponseAcks.shift();
+      pending.resolve();
       return;
     }
+
+    if (frame.type === "error") {
+      conn.ws.close(1000, "tunnel error");
+      return;
+    }
+
+    throw new Error("Unexpected Tunnel frame");
   }
 
   async #handleUpstreamResponse(connectionId: string): Promise<void> {

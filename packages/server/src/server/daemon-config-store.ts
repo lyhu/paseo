@@ -387,7 +387,14 @@ export class DaemonConfigStore {
       this.applyReplacement(next, { removedProviders });
       this.lastKnownPersisted = knownNext;
     } catch (error) {
-      savePersistedConfig(this.paseoHome, persistedBeforePatch, this.logger);
+      const persistedAfterApply = loadPersistedConfig(this.paseoHome, this.logger);
+      const rolledBack = structuredClone(persistedBeforePatch);
+      if (persistedAfterApply.daemon?.tunnel !== undefined) {
+        if (!rolledBack.daemon) rolledBack.daemon = {};
+        rolledBack.daemon.tunnel = persistedAfterApply.daemon.tunnel;
+      }
+      savePersistedConfig(this.paseoHome, rolledBack, this.logger);
+      this.lastKnownPersisted = rolledBack;
       throw error;
     }
 

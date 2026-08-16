@@ -120,6 +120,39 @@ describe("DaemonConfigStore", () => {
     expect(loadPersistedConfig(paseoHome).daemon?.relay?.enabled).toBe(true);
   });
 
+  test("Tunnel persistence preserves adjacent daemon and provider config", () => {
+    const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
+    tempDirs.push(paseoHome);
+    const persisted: PersistedConfig = {
+      version: 1,
+      daemon: {
+        relay: { enabled: true, endpoint: "relay.example.test:443", useTls: true },
+        browserTools: { enabled: true },
+      },
+      agents: {
+        providers: {
+          codex: {
+            command: {
+              mode: "replace",
+              argv: ["codex", "--profile", "tunnel-test"],
+            },
+          },
+        },
+      },
+    };
+    writeFileSync(path.join(paseoHome, "config.json"), JSON.stringify(persisted));
+    const store = new DaemonConfigStore(paseoHome, reloadableConfig(persisted));
+    const before = loadPersistedConfig(paseoHome);
+
+    store.setPersistedTunnelConfig({ ingresses: [], egresses: [] });
+
+    const saved = loadPersistedConfig(paseoHome);
+    expect(saved.daemon?.relay).toEqual(before.daemon?.relay);
+    expect(saved.daemon?.browserTools).toEqual(before.daemon?.browserTools);
+    expect(saved.agents?.providers).toEqual(before.agents?.providers);
+    expect(saved.daemon?.tunnel).toEqual({ ingresses: [], egresses: [] });
+  });
+
   test("patch round-trips agent profiles through the strictly-parsed persisted config", () => {
     const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
     tempDirs.push(paseoHome);
@@ -246,6 +279,36 @@ describe("DaemonConfigStore", () => {
     expect(browserToolsEnabled).toBe(false);
     expect(store.get().browserTools.enabled).toBe(false);
     expect(loadPersistedConfig(paseoHome).daemon?.browserTools?.enabled).toBeUndefined();
+  });
+
+  test("a failed daemon patch does not overwrite a Tunnel mutation made during apply", () => {
+    const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
+    tempDirs.push(paseoHome);
+    const store = new DaemonConfigStore(paseoHome, {
+      relay: { enabled: false },
+      mcp: { injectIntoAgents: false },
+      browserTools: { enabled: false },
+      providers: {},
+      metadataGeneration: { providers: [] },
+      autoArchiveAfterMerge: false,
+      enableTerminalAgentHooks: false,
+      appendSystemPrompt: "",
+    });
+    store.onApply(() => {
+      store.setPersistedTunnelConfig({ ingresses: [], egresses: [] });
+      return () => {};
+    });
+    store.onApply(() => {
+      throw new Error("Later apply owner failed");
+    });
+
+    expect(() => store.patch({ browserTools: { enabled: true } })).toThrow(
+      "Later apply owner failed",
+    );
+
+    const persisted = loadPersistedConfig(paseoHome);
+    expect(persisted.daemon?.browserTools?.enabled).toBeUndefined();
+    expect(persisted.daemon?.tunnel).toEqual({ ingresses: [], egresses: [] });
   });
 
   test("rejects relay patches when a launch override owns the setting", () => {

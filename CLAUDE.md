@@ -42,6 +42,8 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 | [docs/custom-providers.md](docs/custom-providers.md)               | Custom provider config: Z.AI, Alibaba/Qwen, ACP agents, profiles, custom binaries                                              |
 | [docs/plugins.md](docs/plugins.md)                                 | Local plugin manifest, directory source config, RPCs, native surfaces, and attachment sources                                  |
 | [docs/service-proxy.md](docs/service-proxy.md)                     | Service proxy: exposing workspace scripts at public URLs, DNS setup, reverse proxy config                                      |
+| [docs/tunnel/http-proxy-tunnel-design.md](docs/tunnel/http-proxy-tunnel-design.md) | HTTP Tunnel product, data plane, configuration, security, and low-conflict extension design                                    |
+| [docs/tunnel/http-tunnel-review-handoff.md](docs/tunnel/http-tunnel-review-handoff.md) | HTTP Tunnel review state, uncommitted fixes, and the next verification session                                                 |
 | [docs/development.md](docs/development.md)                         | Dev server, build sync gotchas, CLI reference, agent state, Playwright MCP                                                     |
 | [docs/rpc-namespacing.md](docs/rpc-namespacing.md)                 | WebSocket RPC naming convention — dotted namespaces and `.request`/`.response` pairs                                           |
 | [docs/protocol-compatibility.md](docs/protocol-compatibility.md)   | Why app/daemon versions drift, protocol vs feature contract, capability gating, COMPAT tagging                                 |
@@ -84,6 +86,20 @@ Do not:
 - Restate something you already said, in different words, for emphasis.
 - Hedge with "generally", "typically", or "you may want to" when the answer is "do this".
 - Clear your throat: "It's worth noting that", "In order to", "This section covers".
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are tracked in GitHub repository `lyhu/paseo`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default mattpocock/skills triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repository. Use `docs/glossary.md` and system-wide decisions in `docs/adr/`. See `docs/agents/domain.md`.
 
 ## Quick start
 

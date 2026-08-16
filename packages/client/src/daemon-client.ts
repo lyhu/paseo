@@ -119,6 +119,12 @@ import type {
   MutableDaemonConfig,
   MutableDaemonConfigPatch,
 } from "@getpaseo/protocol/messages";
+import type {
+  TunnelHttpEntryMutateResponse,
+  TunnelHttpIngressOfferExportResponse,
+  TunnelHttpStateGetResponse,
+  TunnelMutationPayload,
+} from "@getpaseo/protocol/tunnel-messages";
 import { isRelayClientWebSocketUrl } from "@getpaseo/protocol/daemon-endpoints";
 import { terminalSubscriptionKey } from "@getpaseo/protocol/terminal-subscription-key";
 import {
@@ -501,6 +507,9 @@ type SubscribeTerminalPayload = SubscribeTerminalResponse["payload"];
 type CloseItemsPayload = CloseItemsResponse["payload"];
 type KillTerminalPayload = KillTerminalResponse["payload"];
 type CaptureTerminalPayload = CaptureTerminalResponse["payload"];
+type TunnelHttpStatePayload = TunnelHttpStateGetResponse["payload"];
+type TunnelHttpEntryMutatePayload = TunnelHttpEntryMutateResponse["payload"];
+type TunnelHttpIngressOfferExportPayload = TunnelHttpIngressOfferExportResponse["payload"];
 type ScheduleCreatePayload = Extract<
   SessionOutboundMessage,
   { type: "schedule/create/response" }
@@ -749,6 +758,15 @@ export interface UpdateScheduleOptions {
   newAgentConfig?: UpdateScheduleNewAgentConfig;
   maxRuns?: number | null;
   expiresAt?: string | null;
+  requestId?: string;
+}
+export interface TunnelHttpEntryMutateOptions {
+  mutation: TunnelMutationPayload;
+  requestId?: string;
+}
+
+export interface TunnelHttpIngressOfferExportOptions {
+  ingressId: string;
   requestId?: string;
 }
 export interface RenameBranchInput {
@@ -5309,6 +5327,37 @@ export class DaemonClient {
         ...(options.expiresAt !== undefined ? { expiresAt: options.expiresAt } : {}),
       },
       responseType: "schedule/update/response",
+    });
+  }
+
+  async tunnelHttpStateGet(requestId?: string): Promise<TunnelHttpStatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: { type: "tunnel.http.state.get.request" },
+    });
+  }
+
+  async tunnelHttpEntryMutate(
+    options: TunnelHttpEntryMutateOptions,
+  ): Promise<TunnelHttpEntryMutatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "tunnel.http.entry.mutate.request",
+        mutation: options.mutation,
+      },
+    });
+  }
+
+  async tunnelHttpIngressOfferExport(
+    options: TunnelHttpIngressOfferExportOptions,
+  ): Promise<TunnelHttpIngressOfferExportPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options.requestId,
+      message: {
+        type: "tunnel.http.ingress.offer.export.request",
+        ingressId: options.ingressId,
+      },
     });
   }
 

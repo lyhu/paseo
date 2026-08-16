@@ -1,5 +1,6 @@
 import type { TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
+import { tunnelSettings } from "./tunnel-settings";
 
 export const ja: TranslationResources = {
   common: {
@@ -1825,8 +1826,10 @@ export const ja: TranslationResources = {
       usage: "使用状況",
       terminals: "ターミナル",
       plugins: "プラグイン",
+      tunnel: "Tunnel",
       host: "概要",
     },
+    tunnel: tunnelSettings.ja,
     plugins: pluginSettings.ja,
     metadataGeneration: {
       title: "メタデータ生成",

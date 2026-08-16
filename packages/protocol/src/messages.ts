@@ -59,6 +59,14 @@ import {
 } from "./browser-automation/rpc-schemas.js";
 import { BrowserAutomationHostCapabilitySchema } from "./browser-automation/capabilities.js";
 import {
+  TunnelHttpStateGetRequestSchema,
+  TunnelHttpStateGetResponseSchema,
+  TunnelHttpEntryMutateRequestSchema,
+  TunnelHttpEntryMutateResponseSchema,
+  TunnelHttpIngressOfferExportRequestSchema,
+  TunnelHttpIngressOfferExportResponseSchema,
+} from "./tunnel-messages.js";
+import {
   PaseoConfigRawSchema,
   PaseoLifecycleCommandRawSchema,
   PaseoMetadataGenerationEntrySchema,
@@ -3010,6 +3018,9 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   LoopInspectRequestSchema,
   LoopLogsRequestSchema,
   LoopStopRequestSchema,
+  TunnelHttpStateGetRequestSchema,
+  TunnelHttpEntryMutateRequestSchema,
+  TunnelHttpIngressOfferExportRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -3296,6 +3307,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentProfiles: z.boolean().optional(),
         // COMPAT(agentConfigApply): added in v0.3.2, remove gate after 2027-02-11.
         agentConfigApply: z.boolean().optional(),
+        // COMPAT(httpTunnel): added in v0.5.0, remove gate after 2027-08-15.
+        httpTunnel: z.boolean().optional(),
       })
       .optional(),
   })
@@ -6122,6 +6135,9 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   LoopStopResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
+  TunnelHttpStateGetResponseSchema,
+  TunnelHttpEntryMutateResponseSchema,
+  TunnelHttpIngressOfferExportResponseSchema,
 ]);
 
 export type SessionOutboundMessage = z.infer<typeof SessionOutboundMessageSchema>;

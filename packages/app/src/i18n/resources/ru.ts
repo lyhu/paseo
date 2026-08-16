@@ -1,5 +1,6 @@
 import type { TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
+import { tunnelSettings } from "./tunnel-settings";
 
 export const ru: TranslationResources = {
   common: {
@@ -1843,8 +1844,10 @@ export const ru: TranslationResources = {
       usage: "Использование",
       terminals: "Terminals",
       plugins: "Plugins",
+      tunnel: "Tunnel",
       host: "Обзор",
     },
+    tunnel: tunnelSettings.ru,
     plugins: pluginSettings.ru,
     metadataGeneration: {
       title: "Создание метаданных",

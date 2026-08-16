@@ -1,5 +1,6 @@
 import type { TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
+import { tunnelSettings } from "./tunnel-settings";
 
 export const ar: TranslationResources = {
   common: {
@@ -1808,8 +1809,10 @@ export const ar: TranslationResources = {
       usage: "الاستخدام",
       terminals: "Terminals",
       plugins: "Plugins",
+      tunnel: "Tunnel",
       host: "نظرة عامة",
     },
+    tunnel: tunnelSettings.ar,
     plugins: pluginSettings.ar,
     metadataGeneration: {
       title: "إنشاء البيانات الوصفية",

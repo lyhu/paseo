@@ -78,7 +78,7 @@ function makeSubsystem(overrides: {
 }
 
 describe("DaemonSession", () => {
-  test("config reload returns the daemon-owned classification", () => {
+  test("config reload returns the daemon-owned classification", async () => {
     const { subsystem, emitted } = makeSubsystem({
       reloadConfig: () => ({
         appliedPaths: ["daemon.browserTools.enabled"],
@@ -87,7 +87,7 @@ describe("DaemonSession", () => {
       }),
     });
 
-    subsystem.handleConfigReloadRequest({
+    await subsystem.handleConfigReloadRequest({
       type: "daemon.config.reload.request",
       requestId: "reload-1",
     });
@@ -105,14 +105,14 @@ describe("DaemonSession", () => {
     ]);
   });
 
-  test("config reload failures return a correlated RPC error", () => {
+  test("config reload failures return a correlated RPC error", async () => {
     const { subsystem, emitted } = makeSubsystem({
       reloadConfig: () => {
         throw new Error("Invalid config");
       },
     });
 
-    subsystem.handleConfigReloadRequest({
+    await subsystem.handleConfigReloadRequest({
       type: "daemon.config.reload.request",
       requestId: "reload-2",
     });

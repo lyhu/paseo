@@ -5,7 +5,8 @@ FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS source-pack
 
 ARG PASEO_VERSION
 
-ENV ONNXRUNTIME_NODE_INSTALL=skip
+ENV ONNXRUNTIME_NODE_INSTALL=skip \
+    ELECTRON_SKIP_BINARY_DOWNLOAD=1
 
 WORKDIR /tmp/paseo-src
 COPY . .
@@ -16,6 +17,8 @@ RUN set -eux; \
     fi; \
     node -e 'const fs=require("node:fs"); const pkg=JSON.parse(fs.readFileSync("package.json","utf8")); delete pkg.scripts.prepare; fs.writeFileSync("package.json", `${JSON.stringify(pkg)}\n`);'; \
     npm ci
+
+ENV NODE_OPTIONS=--max-old-space-size=2560
 
 RUN set -eux; \
     mkdir -p /tmp/paseo-packs; \

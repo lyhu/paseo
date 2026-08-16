@@ -71,6 +71,8 @@ CLAUDE.local.md
 **/.tanstack/
 
 # Local agent/tooling artifacts (do not commit)
+.scratch/
+.handoffs/
 PLAN.md
 .valknut/
 valknut-report.html/
@@ -90,3 +92,4 @@ packages/protocol/src/generated/validation/*.aot.ts
 packages/desktop/.cache/
 packages/desktop/src-tauri/resources/managed-runtime/
 app.json
+/docker/tunnel

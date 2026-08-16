@@ -1,3 +1,5 @@
+import { tunnelSettings } from "./tunnel-settings";
+
 export const en = {
   common: {
     back: "Back",
@@ -1818,8 +1820,10 @@ export const en = {
       usage: "Usage",
       terminals: "Terminals",
       plugins: "Plugins",
+      tunnel: "Tunnel",
       host: "Overview",
     },
+    tunnel: tunnelSettings.en,
     plugins: {
       title: "Plugins",
       trustedTitle: "Plugins are trusted code",

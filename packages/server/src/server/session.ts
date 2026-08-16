@@ -59,6 +59,8 @@ import {
   type WorkspaceScriptsService,
 } from "./session/workspace-scripts/workspace-scripts-service.js";
 import type { DaemonConfigStore } from "./daemon-config-store.js";
+import type { TunnelSubsystem } from "./tunnel/subsystem.js";
+import { TunnelSession } from "./tunnel/session.js";
 import { loadPersistedConfig } from "./persisted-config.js";
 import { releaseWorkspaceServicePortPlan } from "./workspace-service-port-registry.js";
 import { getErrorMessage, getErrorMessageOr } from "@getpaseo/protocol/error-utils";
@@ -460,6 +462,7 @@ export interface SessionOptions {
   workspaceGitService: WorkspaceGitService;
   workspaceAutoName: WorkspaceAutoName;
   daemonConfigStore: DaemonConfigStore;
+  tunnelSubsystem?: TunnelSubsystem;
   pluginRuntime?: {
     listPlugins(): import("@getpaseo/protocol/messages").PluginListItem[];
     getLogs(pluginId: string): import("@getpaseo/protocol/messages").PluginLogEntry[];
@@ -609,6 +612,14 @@ function describeRegistryTransition(record: ArchivedRecordSnapshot | null): Regi
   return record.archivedAt ? "unarchived" : "existing";
 }
 
+function createTunnelSession(
+  subsystem: TunnelSubsystem | undefined,
+  emit: (message: SessionOutboundMessage) => void,
+): TunnelSession | null {
+  if (!subsystem) return null;
+  return new TunnelSession({ emit }, subsystem);
+}
+
 /**
  * Session represents a single connected client session.
  * It owns all state management, orchestration logic, and message processing.
@@ -652,6 +663,7 @@ export class Session {
   private readonly workspaceProvisioning: WorkspaceProvisioningService;
   private readonly workspaceRecovery: WorkspaceRecoveryService;
   private readonly daemonConfigStore: DaemonConfigStore;
+  private readonly tunnelSession: TunnelSession | null;
   private readonly pushNotifications: PushNotifications;
   private readonly pluginRuntime: SessionOptions["pluginRuntime"];
   private unsubscribeAgentEvents: (() => void) | null = null;
@@ -737,6 +749,7 @@ export class Session {
       workspaceGitService,
       workspaceAutoName,
       daemonConfigStore,
+      tunnelSubsystem,
       pluginRuntime,
       stt,
       sttLanguage,
@@ -925,7 +938,11 @@ export class Session {
       listWorkspaces: () => this.workspaceRegistry.list(),
       logger: this.sessionLogger,
       hubRelationships: options.hubRelationships,
-      reloadConfig: () => daemonConfigStore.reload(),
+      reloadConfig: async () => {
+        const result = daemonConfigStore.reload();
+        await tunnelSubsystem?.reload();
+        return result;
+      },
     });
     this.hubExecutionController = options.hubExecutionAgents
       ? new HubExecutionController({
@@ -936,6 +953,7 @@ export class Session {
         })
       : null;
     this.daemonConfigStore = daemonConfigStore;
+    this.tunnelSession = createTunnelSession(tunnelSubsystem, (message) => this.emit(message));
     this.terminalManager = terminalManager;
     this.terminalController = new TerminalSessionController({
       terminalManager,
@@ -1878,6 +1896,7 @@ export class Session {
       this.dispatchHubExecutionMessage(msg) ??
       this.dispatchAgentLifecycleMessage(msg) ??
       this.dispatchAgentConfigMessage(msg) ??
+      this.tunnelSession?.dispatch(msg) ??
       this.dispatchCheckoutMessage(msg) ??
       this.dispatchWorkspaceRecoveryMessage(msg) ??
       this.dispatchWorkspaceAndProjectMessage(msg) ??
@@ -2192,8 +2211,7 @@ export class Session {
       case "daemon.get_pairing_offer.request":
         return this.daemonSession.handleGetPairingOfferRequest(msg);
       case "daemon.config.reload.request":
-        this.daemonSession.handleConfigReloadRequest(msg);
-        return undefined;
+        return this.daemonSession.handleConfigReloadRequest(msg);
       case "hub.management.daemon.connect.request":
       case "hub.management.daemon.get_status.request":
       case "hub.management.daemon.disconnect.request":

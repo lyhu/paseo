@@ -8,6 +8,7 @@ import {
   MutableDaemonConfigSchema,
   MutableDaemonConfigPatchSchema,
 } from "@getpaseo/protocol/messages";
+import { PersistedTunnelConfigSchema, type PersistedTunnelConfig } from "./tunnel/config.js";
 
 export type { MutableDaemonConfig, MutableDaemonConfigPatch } from "@getpaseo/protocol/messages";
 
@@ -332,6 +333,23 @@ export class DaemonConfigStore {
     return this.current;
   }
 
+  public getPersistedConfigSnapshot(): PersistedConfig {
+    return structuredClone(loadPersistedConfig(this.paseoHome, this.logger));
+  }
+
+  public setPersistedTunnelConfig(tunnel: PersistedTunnelConfig): void {
+    const persisted = loadPersistedConfig(this.paseoHome, this.logger);
+    const next: PersistedConfig = {
+      ...persisted,
+      daemon: {
+        ...persisted.daemon,
+        tunnel: PersistedTunnelConfigSchema.parse(tunnel),
+      },
+    };
+    savePersistedConfig(this.paseoHome, next, this.logger);
+    this.lastKnownPersisted = next;
+  }
+
   public patch(partial: MutableDaemonConfigPatch): MutableDaemonConfig {
     const parsedPatch = pickSupportedPatchFields(MutableDaemonConfigPatchSchema.parse(partial));
     if (parsedPatch.relay?.enabled !== undefined && !this.relayEnabledMutable) {
@@ -369,7 +387,14 @@ export class DaemonConfigStore {
       this.applyReplacement(next, { removedProviders });
       this.lastKnownPersisted = knownNext;
     } catch (error) {
-      savePersistedConfig(this.paseoHome, persistedBeforePatch, this.logger);
+      const persistedAfterApply = loadPersistedConfig(this.paseoHome, this.logger);
+      const rolledBack = structuredClone(persistedBeforePatch);
+      if (persistedAfterApply.daemon?.tunnel !== undefined) {
+        if (!rolledBack.daemon) rolledBack.daemon = {};
+        rolledBack.daemon.tunnel = persistedAfterApply.daemon.tunnel;
+      }
+      savePersistedConfig(this.paseoHome, rolledBack, this.logger);
+      this.lastKnownPersisted = rolledBack;
       throw error;
     }
 

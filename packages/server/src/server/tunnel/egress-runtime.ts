@@ -42,12 +42,18 @@ export interface EgressMetrics {
   totalDataConnections: number;
 }
 
+interface PendingAcknowledgement {
+  bytes: number;
+  resolve: () => void;
+  reject: (error: Error) => void;
+}
+
 interface DataConnection {
   ws: WebSocket;
   channel: EncryptedChannel | null;
   requestWindow: TunnelCreditWindow;
   responseWindow: TunnelCreditWindow;
-  pendingRequestAcks: Array<{ bytes: number; resolve: () => void }>;
+  pendingRequestAcks: PendingAcknowledgement[];
   responseOrder: TunnelStreamOrder;
   finished: boolean;
   readyTimeout: ReturnType<typeof setTimeout> | null;
@@ -182,6 +188,7 @@ export class EgressRuntime {
 
     const cleanup = () => {
       if (conn.readyTimeout) clearTimeout(conn.readyTimeout);
+      rejectPendingAcknowledgements(conn.pendingRequestAcks);
       if (!this.#dataConnections.delete(connectionId)) return;
       this.#emitMetrics();
     };
@@ -190,6 +197,7 @@ export class EgressRuntime {
       if (conn.finished) return;
       conn.finished = true;
       req.resume();
+      rejectPendingAcknowledgements(conn.pendingRequestAcks);
       if (!res.headersSent) res.writeHead(502);
       if (!res.writableEnded) res.end("Tunnel request failed");
       ws.terminate();
@@ -261,10 +269,16 @@ export class EgressRuntime {
       for (let offset = 0; offset < buffer.byteLength; offset += FRAME_BYTES) {
         const frame = buffer.subarray(offset, Math.min(offset + FRAME_BYTES, buffer.byteLength));
         let resolveAcknowledgement!: () => void;
-        const acknowledgement = new Promise<void>((resolve) => {
+        let rejectAcknowledgement!: (error: Error) => void;
+        const acknowledgement = new Promise<void>((resolve, reject) => {
           resolveAcknowledgement = resolve;
+          rejectAcknowledgement = reject;
         });
-        conn.pendingRequestAcks.push({ bytes: frame.byteLength, resolve: resolveAcknowledgement });
+        conn.pendingRequestAcks.push({
+          bytes: frame.byteLength,
+          resolve: resolveAcknowledgement,
+          reject: rejectAcknowledgement,
+        });
         conn.requestWindow.reserve(frame.byteLength);
 
         await conn.channel.send(
@@ -427,6 +441,11 @@ export class EgressRuntime {
   #emitMetrics(): void {
     this.#onMetrics?.(this.getMetrics());
   }
+}
+
+function rejectPendingAcknowledgements(pending: PendingAcknowledgement[]): void {
+  const error = new Error("Tunnel connection closed");
+  for (const acknowledgement of pending.splice(0)) acknowledgement.reject(error);
 }
 
 function rejectUnsupportedProtocol(socket: import("node:stream").Duplex): void {

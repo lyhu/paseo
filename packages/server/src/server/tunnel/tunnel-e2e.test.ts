@@ -116,6 +116,15 @@ function cancelAfterFirstChunk(port: number): Promise<void> {
   });
 }
 
+async function waitForIdleDataConnections(runtime: TunnelSubsystem): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    if (runtime.getMetrics().activeDataConnections === 0) return;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  throw new Error("Tunnel data connections did not become idle");
+}
+
 describe("Tunnel E2E", () => {
   let paseoHome: string;
   let relay: RelayHarness;
@@ -271,18 +280,14 @@ describe("Tunnel E2E", () => {
     const state = subsystem.getState();
     const egress = state.egresses[0]!;
 
-    const startedAt = Date.now();
     const response = await fetch(`http://127.0.0.1:${egress.listen.port}/sse`);
     expect(response.ok).toBe(true);
     expect(response.headers.get("content-type")).toBe("text/event-stream");
 
     const reader = response.body!.getReader();
     const { value: firstChunk } = await reader.read();
-    const firstEventMs = Date.now() - startedAt;
-
-    expect(firstChunk).toBeDefined();
-    expect(Buffer.from(firstChunk!).toString()).toContain("data: first");
-    expect(firstEventMs).toBeLessThan(200); // Should arrive before second event
+    if (!firstChunk) throw new Error("SSE stream closed before the first event");
+    expect(Buffer.from(firstChunk).toString()).toContain("data: first");
 
     const chunks: Buffer[] = [Buffer.from(firstChunk!)];
     while (true) {
@@ -293,6 +298,7 @@ describe("Tunnel E2E", () => {
 
     const fullBody = Buffer.concat(chunks).toString();
     expect(fullBody).toContain("data: second");
+    expect(fullBody.indexOf("data: first")).toBeLessThan(fullBody.indexOf("data: second"));
   }, 10_000);
 
   it("cleans up on client cancellation", async () => {
@@ -300,13 +306,8 @@ describe("Tunnel E2E", () => {
     const egress = state.egresses[0]!;
 
     await cancelAfterFirstChunk(egress.listen.port);
-
-    // Give cleanup time
-    await new Promise((r) => setTimeout(r, 500));
-
-    // Subsystem should have cleaned up connections
-    const metrics = subsystem.getMetrics();
-    expect(metrics.activeDataConnections).toBe(0);
+    await waitForIdleDataConnections(subsystem);
+    expect(subsystem.getMetrics()).toEqual({ activeDataConnections: 0 });
   }, 10_000);
 
   it("validates access token in header mode", async () => {

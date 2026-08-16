@@ -67,6 +67,12 @@ function requireRouteOffer(offer: RouteOffer | null, invalidMessage: string): Ro
   return offer;
 }
 
+function accessModeLabel(t: (key: string) => string, mode: TunnelAccessMode): string {
+  if (mode === "header") return t("settings.tunnel.access.headerShort");
+  if (mode === "bearer") return t("settings.tunnel.access.bearerShort");
+  return t("settings.tunnel.access.none");
+}
+
 function rotateTokenMutation(input: {
   id: string;
   access: { mode: "bearer" | "header" | "none"; token?: string };
@@ -274,6 +280,17 @@ function EgressEditor({
   const state = useSyncExternalStore(model.subscribe, model.getState, model.getState);
   const submit = useCallback(async () => {
     try {
+      if (
+        state.listenHost === "0.0.0.0" &&
+        !(await confirmDialog({
+          title: t("settings.tunnel.form.networkWarningTitle"),
+          message: t("settings.tunnel.form.networkWarning"),
+          confirmLabel: t("settings.tunnel.form.allInterfaces"),
+          destructive: true,
+        }))
+      ) {
+        return;
+      }
       if (
         state.mode === "create" &&
         state.accessMode === "none" &&
@@ -538,9 +555,12 @@ function EgressRow({
           <Text style={settingsStyles.rowTitle}>{entry.name}</Text>
           <StatusBadge label={t(STATUS_KEYS[entry.status])} variant={statusVariant(entry.status)} />
         </View>
-        <Text
-          style={settingsStyles.rowHint}
-        >{`${entry.listen.host}:${entry.listen.port} → ${entry.ingressName}`}</Text>
+        <Text style={settingsStyles.rowHint}>
+          {`${entry.ingressHostName} / ${entry.ingressName}`}
+        </Text>
+        <Text style={settingsStyles.rowHint}>
+          {`${entry.listen.host}:${entry.listen.port} · ${accessModeLabel(t, entry.access.mode)}`}
+        </Text>
       </View>
       <Switch
         value={entry.enabled}
@@ -618,22 +638,22 @@ function EgressSourcePicker({
     setError(null);
   }, []);
   const openHostPicker = useCallback(() => setHostPickerOpen(true), []);
+  const selectedHostLabel =
+    eligibleHosts.find((host) => host.serverId === selectedHostId)?.label ??
+    t("settings.tunnel.form.selectHost");
   const continueWithIngress = useCallback(async () => {
     if (!selectedIngressId) return;
     setIsExporting(true);
     setError(null);
     try {
       const result = await sourceTunnel.exportOffer(selectedIngressId);
-      onSelect(result.offer);
+      onSelect({ ...result.offer, ingressHostName: selectedHostLabel });
     } catch (exportError) {
       setError(errorMessage(exportError));
     } finally {
       setIsExporting(false);
     }
-  }, [onSelect, selectedIngressId, sourceTunnel]);
-  const selectedHostLabel =
-    eligibleHosts.find((host) => host.serverId === selectedHostId)?.label ??
-    t("settings.tunnel.form.selectHost");
+  }, [onSelect, selectedHostLabel, selectedIngressId, sourceTunnel]);
 
   return (
     <View style={[settingsStyles.card, styles.editor]}>
@@ -1010,24 +1030,19 @@ export function TunnelPage({ serverId }: { serverId: string }) {
 
   return (
     <View>
-      <SettingsSection title={t("settings.hostSections.tunnel")}>
-        {feedback ? <Alert variant={feedback.kind} title={feedback.message} /> : null}
-        <View style={settingsStyles.card}>
-          <View style={styles.row}>
-            <Text style={settingsStyles.rowTitle}>{t("settings.tunnel.labels.relay")}</Text>
+      {feedback ? <Alert variant={feedback.kind} title={feedback.message} /> : null}
+      <SettingsSection
+        title={t("settings.tunnel.ingress")}
+        trailing={
+          <View style={styles.actions}>
             <StatusBadge
               label={t(STATUS_KEYS[state.data.relayStatus])}
               variant={statusVariant(state.data.relayStatus)}
             />
+            <Button size="sm" onPress={openCreateIngress} disabled={pending}>
+              {t("settings.tunnel.actions.addIngress")}
+            </Button>
           </View>
-        </View>
-      </SettingsSection>
-      <SettingsSection
-        title={t("settings.tunnel.ingress")}
-        trailing={
-          <Button size="sm" onPress={openCreateIngress} disabled={pending}>
-            {t("settings.tunnel.actions.addIngress")}
-          </Button>
         }
       >
         <View style={settingsStyles.card}>
@@ -1093,16 +1108,16 @@ export function TunnelPage({ serverId }: { serverId: string }) {
           onSubmit={submitIngress}
         />
       ) : null}
-      {egressEditor && !editorResult ? (
+      {egressEditor ? (
         <EgressEditor
           key={`${egressEditor.mode}:${egressEditor.entry?.id ?? "new"}`}
           snapshot={egressEditor}
-          pending={pending}
+          pending={pending || Boolean(editorResult)}
           onCancel={closeEditor}
           onSubmit={submitEgress}
         />
       ) : null}
-      {routeOfferEditor && !editorResult ? (
+      {routeOfferEditor ? (
         <RouteOfferEditor
           key={routeOfferEditor.entryId}
           snapshot={routeOfferEditor}
@@ -1111,11 +1126,11 @@ export function TunnelPage({ serverId }: { serverId: string }) {
           onSubmit={submitRouteOffer}
         />
       ) : null}
-      {accessTokenEditor && !editorResult ? (
+      {accessTokenEditor ? (
         <AccessTokenEditor
           key={accessTokenEditor.entryId}
           snapshot={accessTokenEditor}
-          pending={pending}
+          pending={pending || Boolean(editorResult)}
           onCancel={closeEditor}
           onSubmit={submitAccessToken}
         />
@@ -1124,13 +1139,16 @@ export function TunnelPage({ serverId }: { serverId: string }) {
         <View style={[settingsStyles.card, styles.editor]}>
           <Alert
             title={t("settings.tunnel.result.title")}
-            description={editorResult.error ?? editorResult.value}
+            description={editorResult.error ?? undefined}
             variant={editorResult.error ? "error" : "default"}
           >
+            <Text selectable style={styles.token}>
+              {editorResult.value}
+            </Text>
             <Button size="sm" onPress={copyEditorResult}>
               {editorResult.copied
                 ? t("settings.tunnel.actions.copied")
-                : t("settings.tunnel.actions.copy")}
+                : t("settings.tunnel.actions.copyToken")}
             </Button>
           </Alert>
           <Button variant="outline" size="sm" onPress={closeEditor}>
@@ -1147,4 +1165,11 @@ const styles = StyleSheet.create((theme) => ({
   row: { padding: theme.spacing[4], gap: theme.spacing[2] },
   title: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing[2] },
+  token: {
+    fontFamily: theme.fontFamily.mono,
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.foreground,
+    backgroundColor: theme.colors.surface2,
+    padding: theme.spacing[2],
+  },
 }));

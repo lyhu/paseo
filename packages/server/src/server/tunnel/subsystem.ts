@@ -1,4 +1,5 @@
 import { randomBytes, createHash } from "node:crypto";
+import { hostname } from "node:os";
 import type { PersistedConfig } from "../persisted-config.js";
 import type { DaemonConfigStore } from "../daemon-config-store.js";
 import {
@@ -251,7 +252,7 @@ export class TunnelSubsystem {
       tunnelPublicKeyB64: tunnel.identity.publicKeyB64,
       routeId: ingress.routeId,
       routeSecret: ingress.routeSecret,
-      ingressHostName: "Local Host",
+      ingressHostName: hostname() || "Local Host",
       ingressName: ingress.name,
       suggestedPort,
     };
@@ -284,31 +285,35 @@ export class TunnelSubsystem {
       },
     });
     await runtime.start();
-    this.#egressRuntimes.set(egressId, runtime);
+    try {
+      const actualPort = runtime.getActualPort();
+      const config = this.#loadConfig();
+      if (!config.daemon) config.daemon = {};
+      if (!config.daemon.tunnel) config.daemon.tunnel = {};
+      const tunnel = config.daemon.tunnel;
 
-    const actualPort = runtime.getActualPort();
-    const config = this.#loadConfig();
-    if (!config.daemon) config.daemon = {};
-    if (!config.daemon.tunnel) config.daemon.tunnel = {};
-    const tunnel = config.daemon.tunnel;
+      const egress: PersistedEgress = {
+        id: egressId,
+        name: options.name,
+        enabled: true,
+        listen: { host: listenHost, port: actualPort },
+        offer: options.offer,
+        access: {
+          mode: options.access.mode,
+          tokenHash,
+        },
+      };
 
-    const egress: PersistedEgress = {
-      id: egressId,
-      name: options.name,
-      enabled: true,
-      listen: { host: listenHost, port: actualPort },
-      offer: options.offer,
-      access: {
-        mode: options.access.mode,
-        tokenHash,
-      },
-    };
+      if (!tunnel.egresses) tunnel.egresses = [];
+      tunnel.egresses.push(egress);
 
-    if (!tunnel.egresses) tunnel.egresses = [];
-    tunnel.egresses.push(egress);
-
-    this.#saveConfig(config);
-    this.#egressErrors.delete(egressId);
+      this.#saveConfig(config);
+      this.#egressRuntimes.set(egressId, runtime);
+      this.#egressErrors.delete(egressId);
+    } catch (error) {
+      await runtime.stop();
+      throw error;
+    }
     return {
       state: this.getState(),
       oneTimeToken,

@@ -418,6 +418,63 @@ describe("TunnelSubsystem", () => {
     expect(subsystem.getState().egresses[0].status).toBe("listening");
   });
 
+  it("does not leave a listener running when egress persistence fails", async () => {
+    const ingress = await subsystem.createIngress({
+      name: "Persist ingress",
+      targetOrigin: "http://localhost:9600",
+    });
+    const offer = await subsystem.exportRouteOffer(ingress.state.ingresses[0].id);
+    const store = createConfigStore(testHome);
+    const persistError = new Error("Tunnel persist failed");
+    await subsystem.stop();
+    subsystem = new TunnelSubsystem({
+      configStore: {
+        getPersistedConfigSnapshot: () => store.getPersistedConfigSnapshot(),
+        setPersistedTunnelConfig: () => {
+          throw persistError;
+        },
+      },
+      relayEndpoint: relay.httpBaseUrl,
+      relayUseTls: false,
+    });
+
+    await expect(
+      subsystem.createEgress({
+        name: "Unpersisted egress",
+        listen: { host: "127.0.0.1", port: 0 },
+        offer,
+        access: { mode: "none" },
+      }),
+    ).rejects.toThrow("Tunnel persist failed");
+    expect(subsystem.getState().egresses).toEqual([]);
+
+    const recovered = new TunnelSubsystem({
+      configStore: store,
+      relayEndpoint: relay.httpBaseUrl,
+      relayUseTls: false,
+    });
+    const created = await recovered.createEgress({
+      name: "Unpersisted egress",
+      listen: { host: "127.0.0.1", port: 0 },
+      offer,
+      access: { mode: "none" },
+    });
+    expect(created.state.egresses).toHaveLength(1);
+    expect(created.state.egresses[0].status).toBe("listening");
+    await recovered.stop();
+  });
+
+  it("exports the current machine hostname as the Offer source label", async () => {
+    const { hostname } = await import("node:os");
+    const ingress = await subsystem.createIngress({
+      name: "Hostname ingress",
+      targetOrigin: "http://localhost:9700",
+    });
+    const offer = await subsystem.exportRouteOffer(ingress.state.ingresses[0].id);
+    expect(offer.ingressHostName).toBe(hostname() || "Local Host");
+    expect(offer.ingressName).toBe("Hostname ingress");
+  });
+
   it("sanitizes state by removing secrets", async () => {
     await subsystem.createIngress({
       name: "Test",

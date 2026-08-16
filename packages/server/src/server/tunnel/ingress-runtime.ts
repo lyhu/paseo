@@ -50,14 +50,20 @@ export interface IngressMetrics {
   totalDataConnections: number;
 }
 
+interface PendingAcknowledgement {
+  bytes: number;
+  resolve: () => void;
+  reject: (error: Error) => void;
+}
+
 interface DataConnection {
   ws: WebSocket;
-  channel: EncryptedChannel;
+  channel: EncryptedChannel | null;
   upstream: ReturnType<typeof httpRequest> | null;
   upstreamResponse: IncomingMessage | null;
   requestWindow: TunnelCreditWindow;
   responseWindow: TunnelCreditWindow;
-  pendingResponseAcks: Array<{ bytes: number; resolve: () => void }>;
+  pendingResponseAcks: PendingAcknowledgement[];
   requestOrder: TunnelStreamOrder;
 }
 
@@ -240,7 +246,7 @@ export class IngressRuntime {
 
     const conn: DataConnection = {
       ws,
-      channel: null as unknown as EncryptedChannel,
+      channel: null,
       upstream: null,
       upstreamResponse: null,
       requestWindow: new TunnelCreditWindow(),
@@ -254,6 +260,7 @@ export class IngressRuntime {
     const cleanup = () => {
       conn.upstream?.destroy();
       conn.upstreamResponse?.destroy();
+      rejectPendingAcknowledgements(conn.pendingResponseAcks);
       if (!this.#dataConnections.delete(connectionId)) return;
       this.#emitMetrics();
     };
@@ -289,13 +296,13 @@ export class IngressRuntime {
 
         if (!conn.upstream.write(buffer)) {
           conn.upstream.once("drain", () => {
-            void conn.channel.send(
+            void conn.channel?.send(
               encodeTunnelFrame({ v: 1, type: "request.ack", bytes: buffer.byteLength }),
             );
             conn.requestWindow.acknowledge(buffer.byteLength);
           });
         } else {
-          void conn.channel.send(
+          void conn.channel?.send(
             encodeTunnelFrame({ v: 1, type: "request.ack", bytes: buffer.byteLength }),
           );
           conn.requestWindow.acknowledge(buffer.byteLength);
@@ -410,7 +417,7 @@ export class IngressRuntime {
 
   async #handleUpstreamResponse(connectionId: string): Promise<void> {
     const conn = this.#dataConnections.get(connectionId);
-    if (!conn?.upstreamResponse) return;
+    if (!conn?.upstreamResponse || !conn.channel) return;
 
     const response = conn.upstreamResponse;
     const headers = sanitizeTunnelHeaders(rawHeadersToTuples(response.rawHeaders));
@@ -430,10 +437,16 @@ export class IngressRuntime {
       for (let offset = 0; offset < buffer.byteLength; offset += FRAME_BYTES) {
         const frame = buffer.subarray(offset, Math.min(offset + FRAME_BYTES, buffer.byteLength));
         let resolveAcknowledgement!: () => void;
-        const acknowledgement = new Promise<void>((resolve) => {
+        let rejectAcknowledgement!: (error: Error) => void;
+        const acknowledgement = new Promise<void>((resolve, reject) => {
           resolveAcknowledgement = resolve;
+          rejectAcknowledgement = reject;
         });
-        conn.pendingResponseAcks.push({ bytes: frame.byteLength, resolve: resolveAcknowledgement });
+        conn.pendingResponseAcks.push({
+          bytes: frame.byteLength,
+          resolve: resolveAcknowledgement,
+          reject: rejectAcknowledgement,
+        });
         conn.responseWindow.reserve(frame.byteLength);
 
         await conn.channel.send(
@@ -454,8 +467,9 @@ export class IngressRuntime {
 
   async #failConnection(conn: DataConnection, code: TunnelErrorCode): Promise<void> {
     try {
-      if (conn.ws.readyState === WebSocket.OPEN && conn.channel.isOpen()) {
-        await conn.channel.send(encodeTunnelFrame({ v: 1, type: "error", code }));
+      const channel = conn.channel;
+      if (conn.ws.readyState === WebSocket.OPEN && channel?.isOpen()) {
+        await channel.send(encodeTunnelFrame({ v: 1, type: "error", code }));
       }
     } catch {
       // The peer can close after the readyState check while the error frame is in flight.
@@ -516,6 +530,11 @@ export class IngressRuntime {
   #emitMetrics(): void {
     this.#onMetrics?.(this.getMetrics());
   }
+}
+
+function rejectPendingAcknowledgements(pending: PendingAcknowledgement[]): void {
+  const error = new Error("Tunnel connection closed");
+  for (const acknowledgement of pending.splice(0)) acknowledgement.reject(error);
 }
 
 function rawToArrayBuffer(data: RawData): ArrayBuffer {

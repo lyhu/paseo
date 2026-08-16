@@ -39,7 +39,7 @@ test("Tunnel import keeps failure beside the form, retries, and exposes the one-
     const tokenResult = page.getByText("Access token ready", { exact: true });
     await expect(tokenResult).toBeVisible();
     await expect(page.getByText(/^pat-/)).toBeVisible();
-    const copy = page.getByRole("button", { name: "Copy", exact: true });
+    const copy = page.getByRole("button", { name: "Copy Token", exact: true });
     await copy.click();
     await expect(page.getByRole("button", { name: "Copied", exact: true })).toBeVisible();
   } finally {

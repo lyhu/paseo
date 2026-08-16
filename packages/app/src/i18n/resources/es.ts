@@ -1835,7 +1835,7 @@ export const es: TranslationResources = {
       tunnel: "Tunnel",
       host: "Resumen",
     },
-    tunnel: tunnelSettings.en,
+    tunnel: tunnelSettings.es,
     plugins: pluginSettings.es,
     metadataGeneration: {
       title: "Generación de metadatos",

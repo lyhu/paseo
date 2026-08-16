@@ -1,7 +1,8 @@
 import { RouteOfferSchema, type RouteOffer } from "@getpaseo/protocol/tunnel-messages";
+import type { TunnelAccessMode } from "./tunnel-form-types";
 
 export type EgressFormMode = "create" | "edit";
-export type TunnelAccessMode = "bearer" | "header" | "none";
+export type { TunnelAccessMode } from "./tunnel-form-types";
 
 export interface EgressFormSnapshot {
   mode: EgressFormMode;

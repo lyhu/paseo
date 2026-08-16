@@ -1792,7 +1792,7 @@ export const ar: TranslationResources = {
       tunnel: "Tunnel",
       host: "نظرة عامة",
     },
-    tunnel: tunnelSettings.en,
+    tunnel: tunnelSettings.ar,
     plugins: pluginSettings.ar,
     metadataGeneration: {
       title: "إنشاء البيانات الوصفية",

@@ -1808,7 +1808,7 @@ export const ja: TranslationResources = {
       tunnel: "Tunnel",
       host: "概要",
     },
-    tunnel: tunnelSettings.en,
+    tunnel: tunnelSettings.ja,
     plugins: pluginSettings.ja,
     metadataGeneration: {
       title: "メタデータ生成",

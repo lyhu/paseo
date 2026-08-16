@@ -1802,7 +1802,7 @@ export const ko: TranslationResources = {
       tunnel: "Tunnel",
       host: "개요",
     },
-    tunnel: tunnelSettings.en,
+    tunnel: tunnelSettings.ko,
     plugins: pluginSettings.ko,
     metadataGeneration: {
       title: "메타데이터 생성",

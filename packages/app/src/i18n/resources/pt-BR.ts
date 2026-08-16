@@ -1821,7 +1821,7 @@ export const ptBR: TranslationResources = {
       tunnel: "Tunnel",
       host: "Visão geral",
     },
-    tunnel: tunnelSettings.en,
+    tunnel: tunnelSettings["pt-BR"],
     plugins: pluginSettings["pt-BR"],
     metadataGeneration: {
       title: "Geração de metadados",

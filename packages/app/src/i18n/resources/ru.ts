@@ -1826,7 +1826,7 @@ export const ru: TranslationResources = {
       tunnel: "Tunnel",
       host: "Обзор",
     },
-    tunnel: tunnelSettings.en,
+    tunnel: tunnelSettings.ru,
     plugins: pluginSettings.ru,
     metadataGeneration: {
       title: "Создание метаданных",

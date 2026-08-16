@@ -1839,7 +1839,7 @@ export const fr: TranslationResources = {
       tunnel: "Tunnel",
       host: "Aperçu",
     },
-    tunnel: tunnelSettings.en,
+    tunnel: tunnelSettings.fr,
     plugins: pluginSettings.fr,
     metadataGeneration: {
       title: "Génération de métadonnées",

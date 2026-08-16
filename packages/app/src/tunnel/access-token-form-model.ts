@@ -1,4 +1,4 @@
-export type TunnelAccessMode = "bearer" | "header" | "none";
+import type { TunnelAccessMode } from "./tunnel-form-types";
 
 export interface AccessTokenFormSnapshot {
   entryId: string;

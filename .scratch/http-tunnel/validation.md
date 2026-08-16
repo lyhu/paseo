@@ -85,7 +85,7 @@ clipboard feedback:
 npm run test:e2e --workspace=@getpaseo/app -- tunnel-settings.spec.ts
 ```
 
-Final result: 1 test passed in 11.3 seconds.
+Final localized-UI result: 1 test passed in 12.7 seconds.
 
 ## Architecture conclusion
 
@@ -120,9 +120,9 @@ docker build --progress=plain \
   -t paseo:http-tunnel-local .
 ```
 
-Final post-review build passed. The image ID was
-`sha256:705e91fa3f6490eda6a174d45aa35d1d03b2a494a3007b3ff2ff69102230ca55`
-and its unpacked Docker size was 289,769,060 bytes.
+Final localized-UI build passed. The image ID was
+`sha256:e9743c93b8d3ed7b0acd32c90d53a40971136b39aed9c18ac5ee49671e74add9`
+and its unpacked Docker size was 289,786,760 bytes.
 
 Start a target fixture and the built Paseo image on an isolated network. The
 checked-in scratch config points both Ingress and Egress at the local relay

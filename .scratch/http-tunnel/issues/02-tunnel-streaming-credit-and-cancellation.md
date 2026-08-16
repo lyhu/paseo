@@ -4,8 +4,8 @@
 
 **Blocked by:** 01 — Deliver an encrypted generic HTTP Tunnel path.
 
-**Status:** ready-for-agent
+**Status:** complete
 
-- [ ] At most eight unacknowledged 64 KiB chunks are read in either direction.
-- [ ] First SSE event arrives before response completion.
-- [ ] Client cancellation closes the matching target request.
+- [x] At most eight unacknowledged 64 KiB chunks are read in either direction.
+- [x] First SSE event arrives before response completion.
+- [x] Client cancellation closes the matching target request.

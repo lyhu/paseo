@@ -100,6 +100,15 @@ describe("Tunnel config schema", () => {
     expect(withQuery.success).toBe(false);
   });
 
+  it("rejects unknown persisted fields", () => {
+    expect(() =>
+      PersistedTunnelConfigSchema.parse({
+        ingresses: [],
+        unexpected: true,
+      }),
+    ).toThrow();
+  });
+
   it("validates access modes", () => {
     const validModes = ["header", "bearer", "none"];
     for (const mode of validModes) {

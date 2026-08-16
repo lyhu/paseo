@@ -4,8 +4,8 @@
 
 **Blocked by:** 03 — Persist and safely administer Tunnel routes.
 
-**Status:** ready-for-agent
+**Status:** complete
 
-- [ ] Add additive, capability-gated dotted Tunnel RPCs that remain wire-compatible.
-- [ ] The Tunnel page presents Ingress then Egress forms with visible pending, success and failure states.
-- [ ] Old daemon/App combinations remain parse-compatible and unsupported Hosts are gated once.
+- [x] Add additive, capability-gated dotted Tunnel RPCs that remain wire-compatible.
+- [x] The Tunnel page presents Ingress then Egress forms with visible pending, success and failure states.
+- [x] Old daemon/App combinations remain parse-compatible and unsupported Hosts are gated once.

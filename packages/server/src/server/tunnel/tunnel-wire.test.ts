@@ -11,9 +11,13 @@ describe("Tunnel wire protocol", () => {
   it("round-trips a request head with repeated headers", () => {
     const frame = decodeTunnelFrame(
       encodeTunnelFrame({
+        v: 1,
         type: "request.head",
         method: "POST",
         path: "/v1/chat/completions?stream=true",
+        routeId: "route_1",
+        routeSecret: "secret_1",
+        client: { address: "127.0.0.1", host: "caller.example", protocol: "http" },
         headers: [
           ["x-example", "one"],
           ["x-example", "two"],
@@ -22,9 +26,13 @@ describe("Tunnel wire protocol", () => {
     );
 
     expect(frame).toEqual({
+      v: 1,
       type: "request.head",
       method: "POST",
       path: "/v1/chat/completions?stream=true",
+      routeId: "route_1",
+      routeSecret: "secret_1",
+      client: { address: "127.0.0.1", host: "caller.example", protocol: "http" },
       headers: [
         ["x-example", "one"],
         ["x-example", "two"],
@@ -51,5 +59,16 @@ describe("Tunnel wire protocol", () => {
     expect(() => new TunnelCreditWindow().reserve(FRAME_BYTES + 1)).toThrow(
       "chunk exceeds 65536 byte limit",
     );
+  });
+
+  it("accepts only fixed public error codes", () => {
+    expect(decodeTunnelFrame('{"v":1,"type":"error","code":"ROUTE_NOT_FOUND"}')).toEqual({
+      v: 1,
+      type: "error",
+      code: "ROUTE_NOT_FOUND",
+    });
+    expect(() =>
+      decodeTunnelFrame('{"v":1,"type":"error","code":"http://internal.example"}'),
+    ).toThrow("Invalid Tunnel frame");
   });
 });

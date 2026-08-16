@@ -118,6 +118,39 @@ describe("DaemonConfigStore", () => {
     expect(loadPersistedConfig(paseoHome).daemon?.relay?.enabled).toBe(true);
   });
 
+  test("Tunnel persistence preserves adjacent daemon and provider config", () => {
+    const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
+    tempDirs.push(paseoHome);
+    const persisted: PersistedConfig = {
+      version: 1,
+      daemon: {
+        relay: { enabled: true, endpoint: "relay.example.test:443", useTls: true },
+        browserTools: { enabled: true },
+      },
+      agents: {
+        providers: {
+          codex: {
+            command: {
+              mode: "replace",
+              argv: ["codex", "--profile", "tunnel-test"],
+            },
+          },
+        },
+      },
+    };
+    writeFileSync(path.join(paseoHome, "config.json"), JSON.stringify(persisted));
+    const store = new DaemonConfigStore(paseoHome, reloadableConfig(persisted));
+    const before = loadPersistedConfig(paseoHome);
+
+    store.setPersistedTunnelConfig({ ingresses: [], egresses: [] });
+
+    const saved = loadPersistedConfig(paseoHome);
+    expect(saved.daemon?.relay).toEqual(before.daemon?.relay);
+    expect(saved.daemon?.browserTools).toEqual(before.daemon?.browserTools);
+    expect(saved.agents?.providers).toEqual(before.agents?.providers);
+    expect(saved.daemon?.tunnel).toEqual({ ingresses: [], egresses: [] });
+  });
+
   test("patch round-trips agent profiles through the strictly-parsed persisted config", () => {
     const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
     tempDirs.push(paseoHome);

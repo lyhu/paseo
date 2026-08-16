@@ -2,23 +2,43 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:http";
+import { once } from "node:events";
 import { TunnelSubsystem } from "./subsystem.js";
+import { createInProcessRelay, type RelayHarness } from "./test-relay-harness.js";
+import { DaemonConfigStore } from "../daemon-config-store.js";
+
+function createConfigStore(paseoHome: string): DaemonConfigStore {
+  return new DaemonConfigStore(paseoHome, {
+    relay: { enabled: false },
+    mcp: { injectIntoAgents: false },
+    browserTools: { enabled: false },
+    providers: {},
+    metadataGeneration: { providers: [] },
+    autoArchiveAfterMerge: false,
+    enableTerminalAgentHooks: false,
+    appendSystemPrompt: "",
+  });
+}
 
 describe("TunnelSubsystem", () => {
   let subsystem: TunnelSubsystem;
   let testHome: string;
+  let relay: RelayHarness;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     testHome = mkdtempSync(join(tmpdir(), "paseo-tunnel-test-"));
+    relay = await createInProcessRelay();
     subsystem = new TunnelSubsystem({
-      paseoHome: testHome,
-      relayEndpoint: "wss://relay.example.com",
-      relayUseTls: true,
+      configStore: createConfigStore(testHome),
+      relayEndpoint: relay.httpBaseUrl,
+      relayUseTls: false,
     });
   });
 
   afterEach(async () => {
     await subsystem.stop();
+    await relay.stop();
     rmSync(testHome, { recursive: true, force: true });
   });
 
@@ -62,7 +82,7 @@ describe("TunnelSubsystem", () => {
     // Create egress with the offer
     const result = await subsystem.createEgress({
       name: "Public Access",
-      listen: { host: "127.0.0.1", port: 8080 },
+      listen: { host: "127.0.0.1", port: 0 },
       offer,
       access: { mode: "header", token: "test-token-123" },
     });
@@ -70,13 +90,33 @@ describe("TunnelSubsystem", () => {
     expect(result.state.egresses).toHaveLength(1);
     const egress = result.state.egresses[0];
     expect(egress.name).toBe("Public Access");
-    expect(egress.listen).toEqual({ host: "127.0.0.1", port: 8080 });
+    expect(egress.listen.host).toBe("127.0.0.1");
+    expect(egress.listen.port).toBeGreaterThan(0);
     expect(egress.access.mode).toBe("header");
     expect(egress.access.configured).toBe(true);
     expect(egress.id).toMatch(/^egr_[a-f0-9]+$/);
 
     // One-time token should be returned
     expect(result.oneTimeToken).toBe("test-token-123");
+  });
+
+  it("generates a one-time access token without persisting plaintext", async () => {
+    const ingressResult = await subsystem.createIngress({
+      name: "Generated token target",
+      targetOrigin: "http://localhost:3000",
+    });
+    const offer = await subsystem.exportRouteOffer(ingressResult.state.ingresses[0].id);
+
+    const result = await subsystem.createEgress({
+      name: "Generated token egress",
+      listen: { host: "127.0.0.1", port: 0 },
+      offer,
+      access: { mode: "header" },
+    });
+
+    expect(result.oneTimeToken).toMatch(/^pat-[A-Za-z0-9_-]{32,}$/);
+    expect(result.state.egresses[0].access.configured).toBe(true);
+    expect(JSON.stringify(result.state)).not.toContain(result.oneTimeToken!);
   });
 
   it("updates ingress properties", async () => {
@@ -127,6 +167,222 @@ describe("TunnelSubsystem", () => {
     });
     const offer2 = await subsystem.exportRouteOffer(secondResult.state.ingresses[0].id);
     expect(offer1.tunnelServerId).toBe(offer2.tunnelServerId);
+  });
+
+  it("rotates route and access capabilities without exposing persisted secrets", async () => {
+    const ingressResult = await subsystem.createIngress({
+      name: "Rotating ingress",
+      targetOrigin: "http://localhost:9002",
+    });
+    const ingressId = ingressResult.state.ingresses[0].id;
+    const firstOffer = await subsystem.exportRouteOffer(ingressId);
+
+    await subsystem.rotateIngressSecret(ingressId);
+    const secondOffer = await subsystem.exportRouteOffer(ingressId);
+    expect(secondOffer.routeId).toBe(firstOffer.routeId);
+    expect(secondOffer.routeSecret).not.toBe(firstOffer.routeSecret);
+
+    const egressResult = await subsystem.createEgress({
+      name: "Rotating egress",
+      listen: { host: "127.0.0.1", port: 0 },
+      offer: firstOffer,
+      access: { mode: "header", token: "first-token" },
+    });
+    const egressId = egressResult.state.egresses[0].id;
+
+    const replacedOffer = await subsystem.replaceEgressOffer(egressId, secondOffer);
+    expect(replacedOffer.state.egresses[0].ingressName).toBe(secondOffer.ingressName);
+
+    const rotatedToken = await subsystem.rotateEgressToken(egressId, {
+      mode: "header",
+    });
+    expect(rotatedToken.oneTimeToken).toMatch(/^pat-[A-Za-z0-9_-]{32,}$/);
+    expect(JSON.stringify(rotatedToken.state)).not.toContain(rotatedToken.oneTimeToken!);
+  });
+
+  it("rejects duplicate names within each entry kind", async () => {
+    await subsystem.createIngress({ name: "Unique", targetOrigin: "http://localhost:9100" });
+    await expect(
+      subsystem.createIngress({ name: "Unique", targetOrigin: "http://localhost:9101" }),
+    ).rejects.toThrow("Ingress name already exists");
+
+    const offer = await subsystem.exportRouteOffer(subsystem.getState().ingresses[0].id);
+    await subsystem.createEgress({
+      name: "Unique egress",
+      listen: { host: "127.0.0.1", port: 0 },
+      offer,
+      access: { mode: "none" },
+    });
+    await expect(
+      subsystem.createEgress({
+        name: "Unique egress",
+        listen: { host: "127.0.0.1", port: 0 },
+        offer,
+        access: { mode: "none" },
+      }),
+    ).rejects.toThrow("Egress name already exists");
+  });
+
+  it("restores enabled runtimes from the persisted snapshot", async () => {
+    const ingressResult = await subsystem.createIngress({
+      name: "Restarted ingress",
+      targetOrigin: "http://localhost:9200",
+    });
+    const offer = await subsystem.exportRouteOffer(ingressResult.state.ingresses[0].id);
+    const egressResult = await subsystem.createEgress({
+      name: "Restarted egress",
+      listen: { host: "127.0.0.1", port: 0 },
+      offer,
+      access: { mode: "none" },
+    });
+    const persistedPort = egressResult.state.egresses[0].listen.port;
+    await subsystem.stop();
+
+    subsystem = new TunnelSubsystem({
+      configStore: createConfigStore(testHome),
+      relayEndpoint: relay.httpBaseUrl,
+      relayUseTls: false,
+    });
+    await subsystem.start();
+
+    const restored = subsystem.getState();
+    expect(restored.relayStatus).toBe("ready");
+    expect(restored.ingresses[0].status).toBe("ready");
+    expect(restored.egresses[0].status).toBe("listening");
+    expect(restored.egresses[0].listen.port).toBe(persistedPort);
+  });
+
+  it("serializes concurrent mutations", async () => {
+    const ingress = await subsystem.createIngress({
+      name: "Concurrent ingress",
+      targetOrigin: "http://localhost:9300",
+    });
+    const offer = await subsystem.exportRouteOffer(ingress.state.ingresses[0].id);
+
+    const results = await Promise.allSettled([
+      subsystem.createEgress({
+        name: "Concurrent egress",
+        listen: { host: "127.0.0.1", port: 0 },
+        offer,
+        access: { mode: "none" },
+      }),
+      subsystem.createEgress({
+        name: "Concurrent egress",
+        listen: { host: "127.0.0.1", port: 0 },
+        offer,
+        access: { mode: "none" },
+      }),
+    ]);
+
+    expect(results.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
+    expect(subsystem.getState().egresses).toHaveLength(1);
+  });
+
+  it("does not persist an ingress when its relay runtime cannot start", async () => {
+    await subsystem.stop();
+    subsystem = new TunnelSubsystem({
+      configStore: createConfigStore(testHome),
+      relayEndpoint: "http://127.0.0.1:1",
+      relayUseTls: false,
+    });
+
+    await expect(
+      subsystem.createIngress({
+        name: "Unavailable relay",
+        targetOrigin: "http://localhost:9400",
+      }),
+    ).rejects.toThrow();
+    expect(subsystem.getState().ingresses).toEqual([]);
+  });
+
+  it("restores healthy listeners when another Tunnel entry is unavailable", async () => {
+    const ingress = await subsystem.createIngress({
+      name: "Partially restored ingress",
+      targetOrigin: "http://localhost:9450",
+    });
+    const offer = await subsystem.exportRouteOffer(ingress.state.ingresses[0].id);
+    const blockedEgress = await subsystem.createEgress({
+      name: "Blocked listener",
+      listen: { host: "127.0.0.1", port: 0 },
+      offer,
+      access: { mode: "none" },
+    });
+    const healthyEgress = await subsystem.createEgress({
+      name: "Healthy listener",
+      listen: { host: "127.0.0.1", port: 0 },
+      offer,
+      access: { mode: "none" },
+    });
+    const blockedPort = blockedEgress.state.egresses.find(
+      (entry) => entry.name === "Blocked listener",
+    )!.listen.port;
+    const healthyPort = healthyEgress.state.egresses.find(
+      (entry) => entry.name === "Healthy listener",
+    )!.listen.port;
+    await subsystem.stop();
+
+    const blocker = createServer();
+    blocker.listen(blockedPort, "127.0.0.1");
+    await once(blocker, "listening");
+    try {
+      subsystem = new TunnelSubsystem({
+        configStore: createConfigStore(testHome),
+        relayEndpoint: "http://127.0.0.1:1",
+        relayUseTls: false,
+      });
+
+      await expect(subsystem.start()).resolves.toBeUndefined();
+
+      const state = subsystem.getState();
+      expect(state.relayStatus).toBe("connecting");
+      expect(state.ingresses[0].status).toBe("error");
+      expect(state.egresses.find((entry) => entry.name === "Blocked listener")).toMatchObject({
+        status: "error",
+        error: "Listener unavailable",
+      });
+      expect(state.egresses.find((entry) => entry.name === "Healthy listener")).toMatchObject({
+        listen: { host: "127.0.0.1", port: healthyPort },
+        status: "listening",
+      });
+    } finally {
+      await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    }
+  });
+
+  it("keeps the previous egress when an updated listener cannot bind", async () => {
+    const ingress = await subsystem.createIngress({
+      name: "Bind ingress",
+      targetOrigin: "http://localhost:9500",
+    });
+    const offer = await subsystem.exportRouteOffer(ingress.state.ingresses[0].id);
+    const created = await subsystem.createEgress({
+      name: "Bind egress",
+      listen: { host: "127.0.0.1", port: 0 },
+      offer,
+      access: { mode: "none" },
+    });
+    const original = created.state.egresses[0];
+
+    const blocker = createServer();
+    blocker.listen(0, "127.0.0.1");
+    await once(blocker, "listening");
+    const blockerAddress = blocker.address();
+    if (!blockerAddress || typeof blockerAddress === "string") {
+      throw new Error("Invalid blocker address");
+    }
+    try {
+      await expect(
+        subsystem.updateEgress({
+          id: original.id,
+          listen: { host: "127.0.0.1", port: blockerAddress.port },
+        }),
+      ).rejects.toThrow();
+    } finally {
+      await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    }
+
+    expect(subsystem.getState().egresses[0].listen).toEqual(original.listen);
+    expect(subsystem.getState().egresses[0].status).toBe("listening");
   });
 
   it("sanitizes state by removing secrets", async () => {

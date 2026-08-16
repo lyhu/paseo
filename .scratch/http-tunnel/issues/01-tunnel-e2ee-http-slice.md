@@ -4,8 +4,8 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** complete
 
-- [ ] One Egress-to-Ingress request uses a new relay data connection and E2EE channel.
-- [ ] Method, path, query, repeated end-to-end headers, JSON and binary bodies are preserved.
-- [ ] CONNECT and Upgrade are rejected and hop-by-hop/Tunnel credential headers are not forwarded.
+- [x] One Egress-to-Ingress request uses a new relay data connection and E2EE channel.
+- [x] Method, path, query, repeated end-to-end headers, JSON and binary bodies are preserved.
+- [x] CONNECT and Upgrade are rejected and hop-by-hop/Tunnel credential headers are not forwarded.

@@ -8,6 +8,7 @@ import {
   MutableDaemonConfigSchema,
   MutableDaemonConfigPatchSchema,
 } from "@getpaseo/protocol/messages";
+import { PersistedTunnelConfigSchema, type PersistedTunnelConfig } from "./tunnel/config.js";
 
 export type { MutableDaemonConfig, MutableDaemonConfigPatch } from "@getpaseo/protocol/messages";
 
@@ -330,6 +331,23 @@ export class DaemonConfigStore {
 
   public get(): MutableDaemonConfig {
     return this.current;
+  }
+
+  public getPersistedConfigSnapshot(): PersistedConfig {
+    return structuredClone(loadPersistedConfig(this.paseoHome, this.logger));
+  }
+
+  public setPersistedTunnelConfig(tunnel: PersistedTunnelConfig): void {
+    const persisted = loadPersistedConfig(this.paseoHome, this.logger);
+    const next: PersistedConfig = {
+      ...persisted,
+      daemon: {
+        ...persisted.daemon,
+        tunnel: PersistedTunnelConfigSchema.parse(tunnel),
+      },
+    };
+    savePersistedConfig(this.paseoHome, next, this.logger);
+    this.lastKnownPersisted = next;
   }
 
   public patch(partial: MutableDaemonConfigPatch): MutableDaemonConfig {

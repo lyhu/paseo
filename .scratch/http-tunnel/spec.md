@@ -60,3 +60,8 @@ measured 88.5–88.8 ms E2EE handshake p50, 102–107 ms p95, 144–163 ms SSE f
 event, and 135–153 ms cancellation propagation. JSON and 2 MiB binary integrity
 passed; all 20/20 data connections closed. See the prototype result for
 reproduction commands and limitations.
+
+The production runtime was also validated through the local relay at
+`http://127.0.0.1:8481` on 2026-08-16. JSON, 2 MiB binary, SSE, bidirectional
+32 MiB credit flow, cancellation, and OpenAI-compatible JSON/SSE all passed.
+See [validation.md](validation.md) for the repeatable command and measurements.

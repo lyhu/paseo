@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "daemon": {
+    "relay": {
+      "enabled": false,
+      "endpoint": "host.lima.internal:8481",
+      "publicEndpoint": "host.lima.internal:8481",
+      "useTls": false,
+      "publicUseTls": false
+    },
+    "tunnel": {
+      "identity": {
+        "serverId": "tunnel_dfcc3c67b6b7f8dd",
+        "publicKeyB64": "6/MS+ghygu34uvA3abl54+HzLzZzgelLuhSw4T+SBgc=",
+        "secretKeyB64": "mEbQfIvYQyFiwHJlWfPvs4Ayh7Zk3xikmNJuuF7nYEw="
+      },
+      "ingresses": [
+        {
+          "id": "ing_docker",
+          "name": "Docker fixture",
+          "enabled": true,
+          "targetOrigin": "http://tunnel-target:9000",
+          "routeId": "route_docker",
+          "routeSecret": "docker-route-secret"
+        }
+      ],
+      "egresses": [
+        {
+          "id": "egr_docker",
+          "name": "Docker entry",
+          "enabled": true,
+          "listen": {
+            "host": "0.0.0.0",
+            "port": 8787
+          },
+          "offer": {
+            "protocolVersion": 1,
+            "relayEndpoint": "host.lima.internal:8481",
+            "relayUseTls": false,
+            "tunnelServerId": "tunnel_dfcc3c67b6b7f8dd",
+            "tunnelPublicKeyB64": "6/MS+ghygu34uvA3abl54+HzLzZzgelLuhSw4T+SBgc=",
+            "routeId": "route_docker",
+            "routeSecret": "docker-route-secret",
+            "ingressHostName": "Docker Paseo",
+            "ingressName": "Docker fixture",
+            "suggestedPort": 8787
+          },
+          "access": {
+            "mode": "none"
+          }
+        }
+      ]
+    }
+  }
+}

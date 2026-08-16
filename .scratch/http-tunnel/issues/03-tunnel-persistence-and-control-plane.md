@@ -4,8 +4,8 @@
 
 **Blocked by:** 01 — Deliver an encrypted generic HTTP Tunnel path.
 
-**Status:** ready-for-agent
+**Status:** complete
 
-- [ ] Strict persisted configuration uses serialized ID-scoped mutation and sanitized snapshots.
-- [ ] Route Offers and access tokens are separate secrets; plaintext token disclosure is one-time.
-- [ ] Runtime lifecycle starts/stops/reloads from the complete snapshot and safe failures return 502.
+- [x] Strict persisted configuration uses serialized ID-scoped mutation and sanitized snapshots.
+- [x] Route Offers and access tokens are separate secrets; plaintext token disclosure is one-time.
+- [x] Runtime lifecycle starts/stops/reloads from the complete snapshot and safe failures return 502.

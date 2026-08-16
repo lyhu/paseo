@@ -4,8 +4,8 @@
 
 **Blocked by:** 02 — Bound streaming Tunnel traffic and stop cancelled requests; 03 — Persist and safely administer Tunnel routes.
 
-**Status:** ready-for-agent
+**Status:** complete
 
-- [ ] Generic fixture validates JSON, binary data, duplicate headers, SSE, backpressure and cancellation.
-- [ ] OpenAI-compatible fixture validates chat-completions JSON and streamed SSE through Egress.
-- [ ] External relay reproduction records commands and result data without claiming capacity conclusions.
+- [x] Generic fixture validates JSON, binary data, duplicate headers, SSE, backpressure and cancellation.
+- [x] OpenAI-compatible fixture validates chat-completions JSON and streamed SSE through Egress.
+- [x] External relay reproduction records commands and result data without claiming capacity conclusions.

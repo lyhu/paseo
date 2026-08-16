@@ -111,7 +111,7 @@ import {
   HostTerminalsPage,
 } from "@/screens/settings/host-page";
 import { HostPluginsPage } from "@/screens/settings/plugins-page";
-import { TunnelPrototypePage } from "@/screens/settings/tunnel-prototype-page";
+import { TunnelPage } from "@/screens/settings/tunnel-page";
 import { MetadataGenerationPage } from "@/screens/settings/metadata-generation-page";
 import ProjectsScreen from "@/screens/projects-screen";
 import ProjectSettingsScreen from "@/screens/project-settings-screen";
@@ -225,7 +225,7 @@ function renderHostSettingsContent(
     case "plugins":
       return <HostPluginsPage serverId={view.serverId} />;
     case "tunnel":
-      return <TunnelPrototypePage serverId={view.serverId} />;
+      return <TunnelPage serverId={view.serverId} />;
     case "host":
       return <HostSettingsPage serverId={view.serverId} onHostRemoved={onHostRemoved} />;
   }

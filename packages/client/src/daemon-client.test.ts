@@ -1588,6 +1588,98 @@ test("keeps default connect timeout shorter than session RPC waiters", async () 
   }
 });
 
+test("Tunnel RPCs send correlated namespaced requests and return their payloads", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_tunnel",
+    logger: createMockLogger(),
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const statePromise = client.tunnelHttpStateGet("tunnel-state");
+  expect(parseSentFrame(mock.sent.at(-1))).toEqual({
+    type: "tunnel.http.state.get.request",
+    requestId: "tunnel-state",
+  });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "tunnel.http.state.get.response",
+      payload: {
+        requestId: "tunnel-state",
+        state: { relayStatus: "inactive", ingresses: [], egresses: [] },
+      },
+    }),
+  );
+  await expect(statePromise).resolves.toEqual({
+    requestId: "tunnel-state",
+    state: { relayStatus: "inactive", ingresses: [], egresses: [] },
+  });
+
+  const mutatePromise = client.tunnelHttpEntryMutate({
+    requestId: "tunnel-mutate",
+    mutation: { operation: "deleteIngress", id: "ing_1" },
+  });
+  expect(parseSentFrame(mock.sent.at(-1))).toEqual({
+    type: "tunnel.http.entry.mutate.request",
+    requestId: "tunnel-mutate",
+    mutation: { operation: "deleteIngress", id: "ing_1" },
+  });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "tunnel.http.entry.mutate.response",
+      payload: {
+        requestId: "tunnel-mutate",
+        state: { relayStatus: "inactive", ingresses: [], egresses: [] },
+      },
+    }),
+  );
+  await expect(mutatePromise).resolves.toEqual({
+    requestId: "tunnel-mutate",
+    state: { relayStatus: "inactive", ingresses: [], egresses: [] },
+  });
+
+  const offerPromise = client.tunnelHttpIngressOfferExport({
+    requestId: "tunnel-offer",
+    ingressId: "ing_1",
+  });
+  expect(parseSentFrame(mock.sent.at(-1))).toEqual({
+    type: "tunnel.http.ingress.offer.export.request",
+    requestId: "tunnel-offer",
+    ingressId: "ing_1",
+  });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "tunnel.http.ingress.offer.export.response",
+      payload: {
+        requestId: "tunnel-offer",
+        offer: {
+          protocolVersion: 1,
+          relayEndpoint: "wss://relay.example.test",
+          relayUseTls: true,
+          tunnelServerId: "tunnel_1",
+          tunnelPublicKeyB64: "public-key",
+          routeId: "route_1",
+          routeSecret: "secret",
+          ingressHostName: "Host",
+          ingressName: "Ingress",
+          suggestedPort: 8080,
+        },
+      },
+    }),
+  );
+  await expect(offerPromise).resolves.toMatchObject({
+    requestId: "tunnel-offer",
+    offer: { routeId: "route_1", suggestedPort: 8080 },
+  });
+});
+
 test("stays online through ten minutes of pongs that arrive five seconds late", async () => {
   useHeartbeatClock();
   const session = new DaemonClientSession();

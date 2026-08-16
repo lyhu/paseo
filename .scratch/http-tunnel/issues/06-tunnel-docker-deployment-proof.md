@@ -4,8 +4,8 @@
 
 **Blocked by:** 05 — Validate generic and OpenAI-compatible services through Tunnel.
 
-**Status:** ready-for-agent
+**Status:** complete
 
-- [ ] The official Dockerfile builds with Tunnel code included.
-- [ ] A containerized daemon is configured and receives an HTTP request through Tunnel fixtures.
-- [ ] Build/run commands and observed output are recorded.
+- [x] The official Dockerfile builds with Tunnel code included.
+- [x] A containerized daemon is configured and receives an HTTP request through Tunnel fixtures.
+- [x] Build/run commands and observed output are recorded.

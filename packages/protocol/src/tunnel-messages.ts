@@ -57,8 +57,10 @@ export const TunnelHttpStateGetRequestSchema = z.object({
 
 export const TunnelHttpStateGetResponseSchema = z.object({
   type: z.literal("tunnel.http.state.get.response"),
-  requestId: z.string(),
-  payload: TunnelStateSchema,
+  payload: z.object({
+    requestId: z.string(),
+    state: TunnelStateSchema,
+  }),
 });
 
 // RPC: Mutation operations
@@ -151,8 +153,8 @@ export const TunnelHttpEntryMutateRequestSchema = z.object({
 
 export const TunnelHttpEntryMutateResponseSchema = z.object({
   type: z.literal("tunnel.http.entry.mutate.response"),
-  requestId: z.string(),
   payload: z.object({
+    requestId: z.string(),
     state: TunnelStateSchema,
     oneTimeToken: z.string().optional(),
   }),
@@ -167,8 +169,8 @@ export const TunnelHttpIngressOfferExportRequestSchema = z.object({
 
 export const TunnelHttpIngressOfferExportResponseSchema = z.object({
   type: z.literal("tunnel.http.ingress.offer.export.response"),
-  requestId: z.string(),
   payload: z.object({
+    requestId: z.string(),
     offer: RouteOfferSchema,
   }),
 });

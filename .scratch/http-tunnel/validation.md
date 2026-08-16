@@ -37,6 +37,20 @@ Re-run after the production review fixes on 2026-08-16:
 | OpenAI-compatible SSE first event |                                             7.84 ms |
 | OpenAI-compatible `[DONE]`        |                                              passed |
 
+Final post-review run on 2026-08-16 against the local relay on port 8481:
+
+| Check                             |                                              Result |
+| --------------------------------- | --------------------------------------------------: |
+| JSON request/response             |                                              passed |
+| Binary body                       |                              2 MiB, SHA-256 matched |
+| SSE first event                   |                                            46.65 ms |
+| 32 MiB upload                     |                caller 2900.48 ms; target 2875.91 ms |
+| 32 MiB download                   |                caller 1441.64 ms; target 1261.00 ms |
+| Caller cancellation               | propagated in 33.99 ms; target observed in 24.73 ms |
+| OpenAI-compatible JSON            |                                              passed |
+| OpenAI-compatible SSE first event |                                             4.79 ms |
+| OpenAI-compatible `[DONE]`        |                                              passed |
+
 The command starts separate Ingress and Egress subsystems, a generic HTTP
 fixture, and an OpenAI-compatible chat-completions fixture. The request and
 response runtimes use real relay v2 WebSockets and E2EE channels. The timing
@@ -55,10 +69,10 @@ npx vitest run \
   --bail=1
 ```
 
-Result after review fixes: 8 files and 72 tests passed. This covers relay endpoint formats,
+Final result: 9 files and 82 tests passed. This covers relay endpoint formats,
 control reconnect, E2EE-ready timeout, JSON, binary bodies, SSE, headers,
 authentication, cancellation, fixed errors, persisted recovery, entry fault
-isolation, invalid frame ordering, wrong ACK rejection, and preservation of
+isolation, invalid frame ordering, wrong ACK rejection, peer-close error races, and preservation of
 Tunnel mutations when an adjacent daemon configuration patch rolls back.
 
 The focused App/Client run passed 3 files and 121 tests. A targeted Playwright
@@ -71,7 +85,7 @@ clipboard feedback:
 npm run test:e2e --workspace=@getpaseo/app -- tunnel-settings.spec.ts
 ```
 
-Result: 1 test passed in 16.7 seconds.
+Final result: 1 test passed in 11.3 seconds.
 
 ## Architecture conclusion
 
@@ -106,9 +120,9 @@ docker build --progress=plain \
   -t paseo:http-tunnel-local .
 ```
 
-Result after review fixes: build passed. The image ID was
-`sha256:a781089b87bc6d743a2f7aef73d08c8a5af38b2a8323bcaef948081a9d69c3b3`
-and its unpacked Docker size was 289,752,424 bytes.
+Final post-review build passed. The image ID was
+`sha256:705e91fa3f6490eda6a174d45aa35d1d03b2a494a3007b3ff2ff69102230ca55`
+and its unpacked Docker size was 289,769,060 bytes.
 
 Start a target fixture and the built Paseo image on an isolated network. The
 checked-in scratch config points both Ingress and Egress at the local relay

@@ -61,6 +61,8 @@ const EgressAccessSchema = z
   })
   .strict();
 
+export const TunnelListenHostSchema = z.enum(["127.0.0.1", "0.0.0.0"]);
+
 const PersistedEgressSchema = z
   .object({
     id: z.string().min(1),
@@ -68,7 +70,7 @@ const PersistedEgressSchema = z
     enabled: z.boolean(),
     listen: z
       .object({
-        host: z.string().min(1),
+        host: TunnelListenHostSchema,
         port: z.number().int().positive(),
       })
       .strict(),
@@ -91,6 +93,7 @@ export type PersistedIngress = z.infer<typeof PersistedIngressSchema>;
 export type PersistedEgress = z.infer<typeof PersistedEgressSchema>;
 export type RouteOffer = z.infer<typeof RouteOfferSchema>;
 export type EgressAccess = z.infer<typeof EgressAccessSchema>;
+export type TunnelListenHost = z.infer<typeof TunnelListenHostSchema>;
 
 export function createTunnelIdentity(): TunnelIdentity {
   const keyPair = generateKeyPair();

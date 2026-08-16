@@ -1,28 +1,23 @@
 import { RouteOfferSchema, type RouteOffer } from "@getpaseo/protocol/tunnel-messages";
 
-export type TunnelEntryFormKind = "ingress" | "egress" | "offer" | "token";
-export type TunnelEntryFormMode = "create" | "edit";
+export type EgressFormMode = "create" | "edit";
 export type TunnelAccessMode = "bearer" | "header" | "none";
 
-export interface TunnelEntryFormSnapshot {
-  kind: TunnelEntryFormKind;
-  mode: TunnelEntryFormMode;
+export interface EgressFormSnapshot {
+  mode: EgressFormMode;
   offer?: RouteOffer;
   entry?: {
     id: string;
     name: string;
-    targetOrigin?: string;
-    listen?: { host: string; port: number };
+    listen: { host: string; port: number };
     accessMode?: TunnelAccessMode;
   };
 }
 
-export interface TunnelEntryFormState {
-  kind: TunnelEntryFormKind;
-  mode: TunnelEntryFormMode;
+export interface EgressFormState {
+  mode: EgressFormMode;
   entryId: string | null;
   name: string;
-  targetOrigin: string;
   routeOfferText: string;
   listenHost: string;
   listenPort: string;
@@ -32,12 +27,11 @@ export interface TunnelEntryFormState {
   submitError: string | null;
 }
 
-export interface TunnelEntryFormModel {
-  getState(): TunnelEntryFormState;
+export interface EgressFormModel {
+  getState(): EgressFormState;
   subscribe(listener: () => void): () => void;
   close(): void;
   setName(value: string): void;
-  setTargetOrigin(value: string): void;
   setRouteOfferText(value: string): void;
   setListenHost(value: string): void;
   setListenPort(value: string): void;
@@ -45,23 +39,6 @@ export interface TunnelEntryFormModel {
   setAccessToken(value: string): void;
   setSubmitError(value: string | null): void;
   getRouteOffer(): RouteOffer | null;
-}
-
-function isTargetOrigin(value: string): boolean {
-  try {
-    const url = new URL(value.trim());
-    return (
-      (url.protocol === "http:" || url.protocol === "https:") &&
-      Boolean(url.hostname) &&
-      (url.pathname === "/" || url.pathname === "") &&
-      !url.search &&
-      !url.hash &&
-      !url.username &&
-      !url.password
-    );
-  } catch {
-    return false;
-  }
 }
 
 function parseRouteOffer(value: string): RouteOffer | null {
@@ -82,40 +59,32 @@ function isListenHost(value: string): boolean {
   return value === "127.0.0.1" || value === "0.0.0.0";
 }
 
-function initialListenPort(snapshot: TunnelEntryFormSnapshot): string {
-  if (snapshot.entry?.listen) return String(snapshot.entry.listen.port);
+function deriveState(state: EgressFormState): EgressFormState {
+  return {
+    ...state,
+    canSubmit:
+      Boolean(state.name.trim()) &&
+      isListenHost(state.listenHost) &&
+      isListenPort(state.listenPort) &&
+      (state.mode === "edit" || parseRouteOffer(state.routeOfferText) !== null),
+  };
+}
+
+function initialListenPort(snapshot: EgressFormSnapshot): string {
+  if (snapshot.entry) return String(snapshot.entry.listen.port);
   if (snapshot.offer) return String(snapshot.offer.suggestedPort);
   return "";
 }
 
-function deriveState(state: TunnelEntryFormState): TunnelEntryFormState {
-  const name = state.name.trim();
-  if (state.kind === "ingress") {
-    return { ...state, canSubmit: Boolean(name) && isTargetOrigin(state.targetOrigin) };
-  }
-  if (state.kind === "offer") {
-    return { ...state, canSubmit: parseRouteOffer(state.routeOfferText) !== null };
-  }
-  if (state.kind === "token") return { ...state, canSubmit: true };
-  const canSubmit =
-    Boolean(name) &&
-    isListenHost(state.listenHost) &&
-    isListenPort(state.listenPort) &&
-    (state.mode === "edit" || parseRouteOffer(state.routeOfferText) !== null);
-  return { ...state, canSubmit };
-}
-
-export function openTunnelEntryForm(snapshot: TunnelEntryFormSnapshot): TunnelEntryFormModel {
+export function openEgressForm(snapshot: EgressFormSnapshot): EgressFormModel {
   const listeners = new Set<() => void>();
   let closed = false;
   let state = deriveState({
-    kind: snapshot.kind,
     mode: snapshot.mode,
     entryId: snapshot.entry?.id ?? null,
     name: snapshot.entry?.name ?? "",
-    targetOrigin: snapshot.entry?.targetOrigin ?? "",
     routeOfferText: snapshot.offer ? JSON.stringify(snapshot.offer) : "",
-    listenHost: snapshot.entry?.listen?.host ?? "127.0.0.1",
+    listenHost: snapshot.entry?.listen.host ?? "127.0.0.1",
     listenPort: initialListenPort(snapshot),
     accessMode: snapshot.entry?.accessMode ?? "header",
     accessToken: "",
@@ -123,7 +92,7 @@ export function openTunnelEntryForm(snapshot: TunnelEntryFormSnapshot): TunnelEn
     submitError: null,
   });
 
-  function publish(nextState: TunnelEntryFormState): void {
+  function publish(nextState: EgressFormState): void {
     if (closed) return;
     state = deriveState(nextState);
     for (const listener of listeners) listener();
@@ -141,9 +110,6 @@ export function openTunnelEntryForm(snapshot: TunnelEntryFormSnapshot): TunnelEn
     },
     setName(value) {
       publish({ ...state, name: value, submitError: null });
-    },
-    setTargetOrigin(value) {
-      publish({ ...state, targetOrigin: value, submitError: null });
     },
     setRouteOfferText(value) {
       const offer = parseRouteOffer(value);

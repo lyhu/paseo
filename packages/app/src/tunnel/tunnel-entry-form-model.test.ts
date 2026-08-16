@@ -1,19 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { openTunnelEntryForm } from "./tunnel-entry-form-model";
+import { openEgressForm } from "./egress-form-model";
+import { openIngressForm } from "./ingress-form-model";
+import { openRouteOfferForm } from "./route-offer-form-model";
+import { openAccessTokenForm } from "./access-token-form-model";
 
-describe("Tunnel entry form model", () => {
-  it("opens each ingress form from its supplied snapshot", () => {
-    const first = openTunnelEntryForm({
-      kind: "ingress",
+describe("Ingress form model", () => {
+  it("opens each form from its supplied snapshot", () => {
+    const first = openIngressForm({
       mode: "edit",
       entry: { id: "ing_1", name: "API", targetOrigin: "http://127.0.0.1:3000" },
     });
     first.setName("Changed");
 
-    const second = openTunnelEntryForm({
-      kind: "ingress",
-      mode: "create",
-    });
+    const second = openIngressForm({ mode: "create" });
 
     expect(first.getState().name).toBe("Changed");
     expect(second.getState()).toMatchObject({
@@ -23,8 +22,8 @@ describe("Tunnel entry form model", () => {
     });
   });
 
-  it("accepts only a complete HTTP origin for an ingress submission", () => {
-    const form = openTunnelEntryForm({ kind: "ingress", mode: "create" });
+  it("accepts only a complete HTTP origin", () => {
+    const form = openIngressForm({ mode: "create" });
     form.setName("API");
     form.setTargetOrigin("https://api.example.test/path");
     expect(form.getState().canSubmit).toBe(false);
@@ -35,9 +34,11 @@ describe("Tunnel entry form model", () => {
       targetOrigin: "https://api.example.test:8443",
     });
   });
+});
 
-  it("requires a valid route offer and port for a new egress", () => {
-    const form = openTunnelEntryForm({ kind: "egress", mode: "create" });
+describe("Egress form model", () => {
+  it("requires a valid route offer and port when creating", () => {
+    const form = openEgressForm({ mode: "create" });
     form.setName("Public API");
     form.setRouteOfferText("not json");
     form.setListenPort("8080");
@@ -50,8 +51,8 @@ describe("Tunnel entry form model", () => {
     expect(form.getState()).toMatchObject({ canSubmit: true, listenPort: "8080" });
   });
 
-  it("keeps optional egress access credentials in the form state", () => {
-    const form = openTunnelEntryForm({ kind: "egress", mode: "create" });
+  it("keeps optional access credentials in its own state", () => {
+    const form = openEgressForm({ mode: "create" });
     expect(form.getState()).toMatchObject({
       accessMode: "header",
       listenHost: "127.0.0.1",
@@ -67,7 +68,7 @@ describe("Tunnel entry form model", () => {
   });
 
   it("accepts only the two listener scopes", () => {
-    const form = openTunnelEntryForm({ kind: "egress", mode: "create", offer });
+    const form = openEgressForm({ mode: "create", offer });
     form.setName("Public API");
     expect(form.getState()).toMatchObject({ canSubmit: true, listenPort: "8080" });
 
@@ -76,6 +77,44 @@ describe("Tunnel entry form model", () => {
 
     form.setListenHost("0.0.0.0");
     expect(form.getState().canSubmit).toBe(true);
+  });
+});
+
+describe("Tunnel auxiliary form models", () => {
+  it("validates a replacement Route Offer without ingress or egress fields", () => {
+    const form = openRouteOfferForm({ entryId: "eg_1" });
+
+    form.setRouteOfferText("invalid");
+    expect(form.getState()).toEqual({
+      entryId: "eg_1",
+      routeOfferText: "invalid",
+      canSubmit: false,
+      submitError: null,
+    });
+
+    form.setRouteOfferText(JSON.stringify(offer));
+    expect(form.getState().canSubmit).toBe(true);
+    expect(form.getRouteOffer()).toEqual(offer);
+  });
+
+  it("keeps token rotation independent from the egress create/edit form", () => {
+    const form = openAccessTokenForm({
+      entryId: "eg_1",
+      entryName: "Public API",
+      accessMode: "header",
+    });
+
+    form.setAccessMode("bearer");
+    form.setAccessToken("replacement-token");
+
+    expect(form.getState()).toEqual({
+      entryId: "eg_1",
+      entryName: "Public API",
+      accessMode: "bearer",
+      accessToken: "replacement-token",
+      canSubmit: true,
+      submitError: null,
+    });
   });
 });
 

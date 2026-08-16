@@ -1,16 +1,9 @@
 /* oxlint-disable react-perf/jsx-no-jsx-as-prop -- SettingsSection owns the header action slot. */
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Text, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { StyleSheet } from "react-native-unistyles";
+import { useTranslation } from "react-i18next";
 import type {
   RouteOffer,
   TunnelEgressState,
@@ -23,13 +16,19 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Switch } from "@/components/ui/switch";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { HostPicker } from "@/components/hosts/host-picker";
-import { useTunnelEntryFormModel } from "@/tunnel/use-tunnel-entry-form-model";
 import type {
+  EgressFormModel,
+  EgressFormSnapshot,
+  EgressFormState,
   TunnelAccessMode,
-  TunnelEntryFormModel,
-  TunnelEntryFormSnapshot,
-  TunnelEntryFormState,
-} from "@/tunnel/tunnel-entry-form-model";
+} from "@/tunnel/egress-form-model";
+import type { IngressFormSnapshot } from "@/tunnel/ingress-form-model";
+import type { RouteOfferFormSnapshot } from "@/tunnel/route-offer-form-model";
+import type { AccessTokenFormSnapshot } from "@/tunnel/access-token-form-model";
+import { useIngressFormModel } from "@/tunnel/use-ingress-form-model";
+import { useEgressFormModel } from "@/tunnel/use-egress-form-model";
+import { useRouteOfferFormModel } from "@/tunnel/use-route-offer-form-model";
+import { useAccessTokenFormModel } from "@/tunnel/use-access-token-form-model";
 import { useTunnelState } from "@/tunnel/tunnel-state";
 import { useHostFeature, useHostFeatureMap } from "@/runtime/host-features";
 import {
@@ -40,19 +39,6 @@ import {
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { settingsStyles } from "@/styles/settings";
 import { confirmDialog } from "@/utils/confirm-dialog";
-
-type EditorSnapshot = TunnelEntryFormSnapshot;
-
-const ACCESS_MODE_OPTIONS: Array<{ value: TunnelAccessMode; label: string }> = [
-  { value: "header", label: "Header" },
-  { value: "bearer", label: "Bearer" },
-  { value: "none", label: "None" },
-];
-
-const LISTEN_SCOPE_OPTIONS = [
-  { value: "127.0.0.1", label: "Local only" },
-  { value: "0.0.0.0", label: "All interfaces" },
-];
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -66,8 +52,18 @@ function statusVariant(
   return "muted" as const;
 }
 
-function requireRouteOffer(offer: RouteOffer | null): RouteOffer {
-  if (!offer) throw new Error("Route Offer is invalid");
+const STATUS_KEYS = {
+  disabled: "settings.tunnel.status.disabled",
+  ready: "settings.tunnel.status.ready",
+  error: "settings.tunnel.status.error",
+  starting: "settings.tunnel.status.starting",
+  listening: "settings.tunnel.status.listening",
+  inactive: "settings.tunnel.status.inactive",
+  connecting: "settings.tunnel.status.connecting",
+} as const;
+
+function requireRouteOffer(offer: RouteOffer | null, invalidMessage: string): RouteOffer {
+  if (!offer) throw new Error(invalidMessage);
   return offer;
 }
 
@@ -88,29 +84,39 @@ function AccessFields({
   model,
   pending,
 }: {
-  state: TunnelEntryFormState;
-  model: TunnelEntryFormModel;
+  state: { accessMode: TunnelAccessMode; accessToken: string };
+  model: {
+    setAccessMode(value: TunnelAccessMode): void;
+    setAccessToken(value: string): void;
+  };
   pending: boolean;
 }) {
+  const { t } = useTranslation();
+  const options: Array<{ value: TunnelAccessMode; label: string }> = [
+    { value: "header", label: t("settings.tunnel.access.headerShort") },
+    { value: "bearer", label: t("settings.tunnel.access.bearerShort") },
+    { value: "none", label: t("settings.tunnel.access.none") },
+  ];
+
   return (
     <>
-      <Field label="Access mode">
+      <Field label={t("settings.tunnel.labels.authentication")}>
         <SegmentedControl
           value={state.accessMode}
           onValueChange={model.setAccessMode}
-          options={ACCESS_MODE_OPTIONS}
+          options={options}
           size="sm"
         />
       </Field>
       {state.accessMode !== "none" ? (
-        <Field label="Access token">
+        <Field label={t("settings.tunnel.labels.accessToken")}>
           <FormTextInput
             initialValue={state.accessToken}
             onChangeText={model.setAccessToken}
             editable={!pending}
             autoCapitalize="none"
             autoCorrect={false}
-            accessibilityLabel="Access token"
+            accessibilityLabel={t("settings.tunnel.labels.accessToken")}
           />
         </Field>
       ) : null}
@@ -124,53 +130,59 @@ function EgressFields({
   pending,
   selectedOffer,
 }: {
-  state: TunnelEntryFormState;
-  model: TunnelEntryFormModel;
+  state: EgressFormState;
+  model: EgressFormModel;
   pending: boolean;
   selectedOffer: RouteOffer | null;
 }) {
+  const { t } = useTranslation();
+  const listenScopeOptions = [
+    { value: "127.0.0.1", label: t("settings.tunnel.form.localOnly") },
+    { value: "0.0.0.0", label: t("settings.tunnel.form.allInterfaces") },
+  ];
+
   return (
     <>
       {selectedOffer ? (
-        <Field label="Source ingress">
+        <Field label={t("settings.tunnel.labels.sourceIngress")}>
           <Text style={settingsStyles.rowHint}>
             {selectedOffer.ingressHostName} / {selectedOffer.ingressName}
           </Text>
         </Field>
       ) : (
-        <Field label="Route Offer">
+        <Field label={t("settings.tunnel.labels.routeOffer")}>
           <FormTextInput
             initialValue={state.routeOfferText}
             onChangeText={model.setRouteOfferText}
             editable={!pending}
             autoCapitalize="none"
             autoCorrect={false}
-            accessibilityLabel="Route Offer"
+            accessibilityLabel={t("settings.tunnel.labels.routeOffer")}
           />
         </Field>
       )}
-      <Field label="Listen scope">
+      <Field label={t("settings.tunnel.labels.listenScope")}>
         <SegmentedControl
           value={state.listenHost}
           onValueChange={model.setListenHost}
-          options={LISTEN_SCOPE_OPTIONS}
+          options={listenScopeOptions}
           size="sm"
         />
       </Field>
       {state.listenHost === "0.0.0.0" ? (
         <Alert
           variant="warning"
-          title="Listener exposed on all interfaces"
-          description="Firewall and network rules still apply. Paseo does not terminate TLS."
+          title={t("settings.tunnel.form.networkWarningTitle")}
+          description={t("settings.tunnel.form.networkWarning")}
         />
       ) : null}
-      <Field label="Listener port">
+      <Field label={t("settings.tunnel.labels.listenerPort")}>
         <FormTextInput
           initialValue={state.listenPort}
           onChangeText={model.setListenPort}
           editable={!pending}
           keyboardType="number-pad"
-          accessibilityLabel="Listener port"
+          accessibilityLabel={t("settings.tunnel.labels.listenerPort")}
         />
       </Field>
       {state.mode === "create" ? (
@@ -180,35 +192,95 @@ function EgressFields({
   );
 }
 
-function TunnelEntryEditor({
+function IngressEditor({
   snapshot,
   pending,
   onCancel,
   onSubmit,
 }: {
-  snapshot: EditorSnapshot;
+  snapshot: IngressFormSnapshot;
+  pending: boolean;
+  onCancel(): void;
+  onSubmit(input: { name: string; targetOrigin: string }): Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const model = useIngressFormModel(snapshot);
+  const state = useSyncExternalStore(model.subscribe, model.getState, model.getState);
+  const submit = useCallback(async () => {
+    try {
+      await onSubmit({
+        name: state.name.trim(),
+        targetOrigin: state.targetOrigin.trim(),
+      });
+    } catch (error) {
+      model.setSubmitError(errorMessage(error));
+    }
+  }, [model, onSubmit, state.name, state.targetOrigin]);
+
+  return (
+    <View style={[settingsStyles.card, styles.editor]}>
+      <Field label={t("settings.tunnel.form.name")}>
+        <FormTextInput
+          initialValue={state.name}
+          onChangeText={model.setName}
+          editable={!pending}
+          accessibilityLabel={t("settings.tunnel.form.tunnelName")}
+        />
+      </Field>
+      <Field
+        label={t("settings.tunnel.labels.targetOrigin")}
+        hint={t("settings.tunnel.form.originHint")}
+      >
+        <FormTextInput
+          initialValue={state.targetOrigin}
+          onChangeText={model.setTargetOrigin}
+          editable={!pending}
+          autoCapitalize="none"
+          autoCorrect={false}
+          accessibilityLabel={t("settings.tunnel.labels.targetOrigin")}
+        />
+      </Field>
+      {state.submitError ? <Alert variant="error" title={state.submitError} /> : null}
+      <View style={styles.actions}>
+        <Button variant="outline" size="sm" onPress={onCancel} disabled={pending}>
+          {t("settings.tunnel.actions.cancel")}
+        </Button>
+        <Button size="sm" onPress={submit} disabled={!state.canSubmit || pending}>
+          {pending ? t("settings.tunnel.actions.saving") : t("settings.tunnel.actions.save")}
+        </Button>
+      </View>
+    </View>
+  );
+}
+
+function EgressEditor({
+  snapshot,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  snapshot: EgressFormSnapshot;
   pending: boolean;
   onCancel(): void;
   onSubmit(input: {
     name: string;
-    targetOrigin: string;
     listen: { host: string; port: number };
     offer: RouteOffer | null;
-    access: { mode: "bearer" | "header" | "none"; token?: string };
+    access: { mode: TunnelAccessMode; token?: string };
   }): Promise<void>;
 }) {
-  const model = useTunnelEntryFormModel(snapshot);
+  const { t } = useTranslation();
+  const model = useEgressFormModel(snapshot);
   const state = useSyncExternalStore(model.subscribe, model.getState, model.getState);
   const submit = useCallback(async () => {
-    const offer = model.getRouteOffer();
     try {
       if (
+        state.mode === "create" &&
         state.accessMode === "none" &&
-        ((state.kind === "egress" && state.mode === "create") || state.kind === "token") &&
         !(await confirmDialog({
-          title: "Create listener without access control?",
-          message: "Any caller that can reach this listener can use the Tunnel.",
-          confirmLabel: "Use no authentication",
+          title: t("settings.tunnel.confirm.noAccessTitle"),
+          message: t("settings.tunnel.confirm.noAccessMessage"),
+          confirmLabel: t("settings.tunnel.confirm.noAccessConfirm"),
           destructive: true,
         }))
       ) {
@@ -216,9 +288,8 @@ function TunnelEntryEditor({
       }
       await onSubmit({
         name: state.name.trim(),
-        targetOrigin: state.targetOrigin.trim(),
-        listen: { host: state.listenHost.trim(), port: Number(state.listenPort) },
-        offer,
+        listen: { host: state.listenHost, port: Number(state.listenPort) },
+        offer: model.getRouteOffer(),
         access: {
           mode: state.accessMode,
           ...(state.accessToken.trim() ? { token: state.accessToken.trim() } : {}),
@@ -227,77 +298,135 @@ function TunnelEntryEditor({
     } catch (error) {
       model.setSubmitError(errorMessage(error));
     }
-  }, [
-    model,
-    onSubmit,
-    state.accessMode,
-    state.accessToken,
-    state.kind,
-    state.listenHost,
-    state.listenPort,
-    state.mode,
-    state.name,
-    state.targetOrigin,
-  ]);
+  }, [model, onSubmit, state, t]);
 
-  let fields: ReactNode;
-  if (state.kind === "ingress") {
-    fields = (
-      <Field label="Target origin" hint="http:// or https:// origin without a path">
+  return (
+    <View style={[settingsStyles.card, styles.editor]}>
+      <Field label={t("settings.tunnel.form.name")}>
         <FormTextInput
-          initialValue={state.targetOrigin}
-          onChangeText={model.setTargetOrigin}
+          initialValue={state.name}
+          onChangeText={model.setName}
           editable={!pending}
-          autoCapitalize="none"
-          autoCorrect={false}
-          accessibilityLabel="Target origin"
+          accessibilityLabel={t("settings.tunnel.form.tunnelName")}
         />
       </Field>
-    );
-  } else if (state.kind === "offer") {
-    fields = (
-      <Field label="Route Offer">
-        <FormTextInput
-          initialValue={state.routeOfferText}
-          onChangeText={model.setRouteOfferText}
-          editable={!pending}
-          autoCapitalize="none"
-          autoCorrect={false}
-          accessibilityLabel="Route Offer"
-        />
-      </Field>
-    );
-  } else if (state.kind === "token") {
-    fields = <AccessFields state={state} model={model} pending={pending} />;
-  } else {
-    fields = (
       <EgressFields
         state={state}
         model={model}
         pending={pending}
         selectedOffer={snapshot.offer ?? null}
       />
-    );
-  }
-
-  return (
-    <View style={[settingsStyles.card, styles.editor]}>
-      <Field label="Name">
-        <FormTextInput
-          initialValue={state.name}
-          onChangeText={model.setName}
-          editable={!pending}
-          accessibilityLabel="Tunnel name"
-        />
-      </Field>
-      {fields}
       {state.submitError ? <Alert variant="error" title={state.submitError} /> : null}
       <View style={styles.actions}>
         <Button variant="outline" size="sm" onPress={onCancel} disabled={pending}>
-          Cancel
+          {t("settings.tunnel.actions.cancel")}
         </Button>
         <Button size="sm" onPress={submit} disabled={!state.canSubmit || pending}>
-          {pending ? "Saving…" : "Save"}
+          {pending ? t("settings.tunnel.actions.saving") : t("settings.tunnel.actions.save")}
+        </Button>
+      </View>
+    </View>
+  );
+}
+
+function RouteOfferEditor({
+  snapshot,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  snapshot: RouteOfferFormSnapshot;
+  pending: boolean;
+  onCancel(): void;
+  onSubmit(offer: RouteOffer): Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const model = useRouteOfferFormModel(snapshot);
+  const state = useSyncExternalStore(model.subscribe, model.getState, model.getState);
+  const submit = useCallback(async () => {
+    try {
+      await onSubmit(
+        requireRouteOffer(model.getRouteOffer(), t("settings.tunnel.errors.invalidRouteOffer")),
+      );
+    } catch (error) {
+      model.setSubmitError(errorMessage(error));
+    }
+  }, [model, onSubmit, t]);
+
+  return (
+    <View style={[settingsStyles.card, styles.editor]}>
+      <Field label={t("settings.tunnel.labels.routeOffer")}>
+        <FormTextInput
+          initialValue={state.routeOfferText}
+          onChangeText={model.setRouteOfferText}
+          editable={!pending}
+          autoCapitalize="none"
+          autoCorrect={false}
+          accessibilityLabel={t("settings.tunnel.labels.routeOffer")}
+        />
+      </Field>
+      {state.submitError ? <Alert variant="error" title={state.submitError} /> : null}
+      <View style={styles.actions}>
+        <Button variant="outline" size="sm" onPress={onCancel} disabled={pending}>
+          {t("settings.tunnel.actions.cancel")}
+        </Button>
+        <Button size="sm" onPress={submit} disabled={!state.canSubmit || pending}>
+          {pending ? t("settings.tunnel.actions.saving") : t("settings.tunnel.actions.save")}
+        </Button>
+      </View>
+    </View>
+  );
+}
+
+function AccessTokenEditor({
+  snapshot,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  snapshot: AccessTokenFormSnapshot;
+  pending: boolean;
+  onCancel(): void;
+  onSubmit(access: { mode: TunnelAccessMode; token?: string }): Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const model = useAccessTokenFormModel(snapshot);
+  const state = useSyncExternalStore(model.subscribe, model.getState, model.getState);
+  const submit = useCallback(async () => {
+    try {
+      if (
+        state.accessMode === "none" &&
+        !(await confirmDialog({
+          title: t("settings.tunnel.confirm.noAccessTitle"),
+          message: t("settings.tunnel.confirm.noAccessMessage"),
+          confirmLabel: t("settings.tunnel.confirm.noAccessConfirm"),
+          destructive: true,
+        }))
+      ) {
+        return;
+      }
+      await onSubmit({
+        mode: state.accessMode,
+        ...(state.accessToken.trim() ? { token: state.accessToken.trim() } : {}),
+      });
+    } catch (error) {
+      model.setSubmitError(errorMessage(error));
+    }
+  }, [model, onSubmit, state.accessMode, state.accessToken, t]);
+
+  return (
+    <View style={[settingsStyles.card, styles.editor]}>
+      <Text style={settingsStyles.rowTitle}>
+        {t("settings.tunnel.token.rotateTitle", { name: state.entryName })}
+      </Text>
+      <AccessFields state={state} model={model} pending={pending} />
+      {state.submitError ? <Alert variant="error" title={state.submitError} /> : null}
+      <View style={styles.actions}>
+        <Button variant="outline" size="sm" onPress={onCancel} disabled={pending}>
+          {t("settings.tunnel.actions.cancel")}
+        </Button>
+        <Button size="sm" onPress={submit} disabled={!state.canSubmit || pending}>
+          {pending ? t("settings.tunnel.actions.saving") : t("settings.tunnel.actions.save")}
         </Button>
       </View>
     </View>
@@ -317,7 +446,7 @@ function IngressRow({
 }: {
   entry: TunnelIngressState;
   pending: boolean;
-  result: { label: string; value: string; copied: boolean; error: string | null } | null;
+  result: { value: string; copied: boolean; error: string | null } | null;
   onToggle(entry: TunnelIngressState): void;
   onEdit(entry: TunnelIngressState): void;
   onExport(entry: TunnelIngressState): void;
@@ -325,6 +454,7 @@ function IngressRow({
   onDelete(entry: TunnelIngressState): void;
   onCopy(): void;
 }) {
+  const { t } = useTranslation();
   const toggle = useCallback(() => onToggle(entry), [entry, onToggle]);
   const edit = useCallback(() => onEdit(entry), [entry, onEdit]);
   const exportOffer = useCallback(() => onExport(entry), [entry, onExport]);
@@ -336,7 +466,7 @@ function IngressRow({
       <View style={settingsStyles.rowContent}>
         <View style={styles.title}>
           <Text style={settingsStyles.rowTitle}>{entry.name}</Text>
-          <StatusBadge label={entry.status} variant={statusVariant(entry.status)} />
+          <StatusBadge label={t(STATUS_KEYS[entry.status])} variant={statusVariant(entry.status)} />
         </View>
         <Text style={settingsStyles.rowHint}>{entry.targetOrigin}</Text>
       </View>
@@ -344,30 +474,32 @@ function IngressRow({
         value={entry.enabled}
         onValueChange={toggle}
         disabled={pending}
-        accessibilityLabel={`Enable ${entry.name}`}
+        accessibilityLabel={t("settings.tunnel.accessibility.enableEntry", { name: entry.name })}
       />
       <View style={styles.actions}>
         <Button variant="outline" size="sm" onPress={edit} disabled={pending}>
-          Edit
+          {t("settings.tunnel.actions.edit")}
         </Button>
         <Button variant="outline" size="sm" onPress={exportOffer} disabled={pending}>
-          Export offer
+          {t("settings.tunnel.actions.copyOffer")}
         </Button>
         <Button variant="outline" size="sm" onPress={rotateSecret} disabled={pending}>
-          Rotate secret
+          {t("settings.tunnel.actions.rotateSecret")}
         </Button>
         <Button variant="outline" size="sm" onPress={remove} disabled={pending}>
-          Delete
+          {t("settings.tunnel.actions.delete")}
         </Button>
       </View>
       {result ? (
         <Alert
-          title={`${result.label} ready`}
+          title={t("settings.tunnel.result.routeOfferTitle")}
           description={result.error ?? result.value}
           variant={result.error ? "error" : "default"}
         >
           <Button size="sm" onPress={onCopy} disabled={pending}>
-            {result.copied ? "Copied" : "Copy"}
+            {result.copied
+              ? t("settings.tunnel.actions.copied")
+              : t("settings.tunnel.actions.copy")}
           </Button>
         </Alert>
       ) : null}
@@ -392,6 +524,7 @@ function EgressRow({
   onRotateToken(entry: TunnelEgressState): void;
   onDelete(entry: TunnelEgressState): void;
 }) {
+  const { t } = useTranslation();
   const toggle = useCallback(() => onToggle(entry), [entry, onToggle]);
   const edit = useCallback(() => onEdit(entry), [entry, onEdit]);
   const replaceOffer = useCallback(() => onReplaceOffer(entry), [entry, onReplaceOffer]);
@@ -403,7 +536,7 @@ function EgressRow({
       <View style={settingsStyles.rowContent}>
         <View style={styles.title}>
           <Text style={settingsStyles.rowTitle}>{entry.name}</Text>
-          <StatusBadge label={entry.status} variant={statusVariant(entry.status)} />
+          <StatusBadge label={t(STATUS_KEYS[entry.status])} variant={statusVariant(entry.status)} />
         </View>
         <Text
           style={settingsStyles.rowHint}
@@ -413,20 +546,20 @@ function EgressRow({
         value={entry.enabled}
         onValueChange={toggle}
         disabled={pending}
-        accessibilityLabel={`Enable ${entry.name}`}
+        accessibilityLabel={t("settings.tunnel.accessibility.enableEntry", { name: entry.name })}
       />
       <View style={styles.actions}>
         <Button variant="outline" size="sm" onPress={edit} disabled={pending}>
-          Edit
+          {t("settings.tunnel.actions.edit")}
         </Button>
         <Button variant="outline" size="sm" onPress={replaceOffer} disabled={pending}>
-          Replace offer
+          {t("settings.tunnel.actions.replaceOffer")}
         </Button>
         <Button variant="outline" size="sm" onPress={rotateToken} disabled={pending}>
-          Rotate token
+          {t("settings.tunnel.actions.rotateToken")}
         </Button>
         <Button variant="outline" size="sm" onPress={remove} disabled={pending}>
-          Delete
+          {t("settings.tunnel.actions.delete")}
         </Button>
       </View>
     </View>
@@ -442,6 +575,7 @@ function EgressSourcePicker({
   onCancel(): void;
   onSelect(offer: RouteOffer): void;
 }) {
+  const { t } = useTranslation();
   const hosts = useHosts();
   const hostIds = useMemo(() => hosts.map((host) => host.serverId), [hosts]);
   const connectionStatuses = useHostRuntimeConnectionStatuses(hostIds);
@@ -498,11 +632,12 @@ function EgressSourcePicker({
     }
   }, [onSelect, selectedIngressId, sourceTunnel]);
   const selectedHostLabel =
-    eligibleHosts.find((host) => host.serverId === selectedHostId)?.label ?? "Select Host";
+    eligibleHosts.find((host) => host.serverId === selectedHostId)?.label ??
+    t("settings.tunnel.form.selectHost");
 
   return (
     <View style={[settingsStyles.card, styles.editor]}>
-      <Field label="Ingress Host">
+      <Field label={t("settings.tunnel.labels.sourceHost")}>
         <HostPicker
           hosts={eligibleHosts}
           value={selectedHostId}
@@ -510,7 +645,7 @@ function EgressSourcePicker({
           open={hostPickerOpen}
           onOpenChange={setHostPickerOpen}
           anchorRef={hostPickerAnchorRef}
-          title="Ingress Host"
+          title={t("settings.tunnel.labels.sourceHost")}
         >
           <View ref={hostPickerAnchorRef}>
             <Button
@@ -518,15 +653,17 @@ function EgressSourcePicker({
               size="sm"
               onPress={openHostPicker}
               disabled={pending || eligibleHosts.length === 0}
-              accessibilityLabel="Ingress Host"
+              accessibilityLabel={t("settings.tunnel.labels.sourceHost")}
             >
               {selectedHostLabel}
             </Button>
           </View>
         </HostPicker>
       </Field>
-      <Field label="Ingress">
-        {sourceTunnel.state.isLoading ? <Text>Loading ingresses…</Text> : null}
+      <Field label={t("settings.tunnel.ingress")}>
+        {sourceTunnel.state.isLoading ? (
+          <Text>{t("settings.tunnel.states.loadingIngresses")}</Text>
+        ) : null}
         {!sourceTunnel.state.isLoading && ingresses.length > 0 ? (
           <SegmentedControl
             value={selectedIngressId}
@@ -539,13 +676,13 @@ function EgressSourcePicker({
           />
         ) : null}
         {!sourceTunnel.state.isLoading && ingresses.length === 0 ? (
-          <Text style={settingsStyles.rowHint}>No enabled ingress on this Host</Text>
+          <Text style={settingsStyles.rowHint}>{t("settings.tunnel.empty.noEnabledIngress")}</Text>
         ) : null}
       </Field>
       {error ? <Alert variant="error" title={error} /> : null}
       <View style={styles.actions}>
         <Button variant="outline" size="sm" onPress={onCancel} disabled={isExporting}>
-          Cancel
+          {t("settings.tunnel.actions.cancel")}
         </Button>
         <Button
           size="sm"
@@ -553,21 +690,25 @@ function EgressSourcePicker({
           disabled={!selectedIngressId || pending || isExporting}
           loading={isExporting}
         >
-          Continue
+          {t("settings.tunnel.actions.continue")}
         </Button>
       </View>
     </View>
   );
 }
 
+// oxlint-disable-next-line complexity -- This component coordinates the independent Tunnel form lifecycles and mutations.
 export function TunnelPage({ serverId }: { serverId: string }) {
+  const { t } = useTranslation();
   const connected = useHostRuntimeIsConnected(serverId);
   const supported = useHostFeature(serverId, "httpTunnel");
   const { state, mutate, exportOffer } = useTunnelState(serverId, supported);
-  const [editor, setEditor] = useState<EditorSnapshot | null>(null);
+  const [ingressEditor, setIngressEditor] = useState<IngressFormSnapshot | null>(null);
+  const [egressEditor, setEgressEditor] = useState<EgressFormSnapshot | null>(null);
+  const [routeOfferEditor, setRouteOfferEditor] = useState<RouteOfferFormSnapshot | null>(null);
+  const [accessTokenEditor, setAccessTokenEditor] = useState<AccessTokenFormSnapshot | null>(null);
   const [selectingEgressSource, setSelectingEgressSource] = useState(false);
   const [editorResult, setEditorResult] = useState<{
-    label: string;
     value: string;
     copied: boolean;
     error: string | null;
@@ -577,7 +718,6 @@ export function TunnelPage({ serverId }: { serverId: string }) {
   );
   const [copyValue, setCopyValue] = useState<{
     ownerId: string;
-    label: string;
     value: string;
     copied: boolean;
     error: string | null;
@@ -589,10 +729,10 @@ export function TunnelPage({ serverId }: { serverId: string }) {
     async (mutation: Parameters<typeof mutate.mutateAsync>[0]) => {
       setFeedback(null);
       const result = await mutate.mutateAsync(mutation);
-      setFeedback({ kind: "success", message: "Saved" });
+      setFeedback({ kind: "success", message: t("settings.tunnel.states.saved") });
       return result;
     },
-    [mutate],
+    [mutate, t],
   );
   const runMutation = useCallback(
     async (mutation: Parameters<typeof mutate.mutateAsync>[0]): Promise<boolean> => {
@@ -606,97 +746,117 @@ export function TunnelPage({ serverId }: { serverId: string }) {
     },
     [commitMutation],
   );
-  const submitEditor = useCallback(
+  const submitIngress = useCallback(
+    async (input: { name: string; targetOrigin: string }) => {
+      if (!ingressEditor) return;
+      await commitMutation(
+        ingressEditor.mode === "create"
+          ? { operation: "createIngress", name: input.name, targetOrigin: input.targetOrigin }
+          : {
+              operation: "updateIngress",
+              id: ingressEditor.entry?.id ?? "",
+              name: input.name,
+              targetOrigin: input.targetOrigin,
+            },
+      );
+      setIngressEditor(null);
+    },
+    [commitMutation, ingressEditor],
+  );
+  const submitEgress = useCallback(
     async (input: {
       name: string;
-      targetOrigin: string;
       listen: { host: string; port: number };
       offer: RouteOffer | null;
-      access: { mode: "bearer" | "header" | "none"; token?: string };
+      access: { mode: TunnelAccessMode; token?: string };
     }) => {
-      if (!editor) return;
-      let result;
-      if (editor.kind === "ingress") {
-        result = await commitMutation(
-          editor.mode === "create"
-            ? { operation: "createIngress", name: input.name, targetOrigin: input.targetOrigin }
-            : {
-                operation: "updateIngress",
-                id: editor.entry?.id ?? "",
-                name: input.name,
-                targetOrigin: input.targetOrigin,
-              },
-        );
-      } else if (editor.kind === "egress") {
-        if (editor.mode === "create") {
-          result = await commitMutation({
-            operation: "createEgress",
-            name: input.name,
-            listen: input.listen,
-            offer: requireRouteOffer(input.offer),
-            access: input.access,
-          });
-        } else {
-          result = await commitMutation({
-            operation: "updateEgress",
-            id: editor.entry?.id ?? "",
-            name: input.name,
-            listen: input.listen,
-          });
-        }
-      } else if (editor.kind === "offer") {
-        result = await commitMutation({
-          operation: "replaceEgressOffer",
-          id: editor.entry?.id ?? "",
-          offer: requireRouteOffer(input.offer),
-        });
-      } else {
-        result = await commitMutation(
-          rotateTokenMutation({ id: editor.entry?.id ?? "", access: input.access }),
-        );
-      }
+      if (!egressEditor) return;
+      const result =
+        egressEditor.mode === "create"
+          ? await commitMutation({
+              operation: "createEgress",
+              name: input.name,
+              listen: input.listen,
+              offer: requireRouteOffer(input.offer, t("settings.tunnel.errors.invalidRouteOffer")),
+              access: input.access,
+            })
+          : await commitMutation({
+              operation: "updateEgress",
+              id: egressEditor.entry?.id ?? "",
+              name: input.name,
+              listen: input.listen,
+            });
       if (result.oneTimeToken) {
         setEditorResult({
-          label: "Access token",
           value: result.oneTimeToken,
           copied: false,
           error: null,
         });
       } else {
-        setEditor(null);
+        setEgressEditor(null);
       }
     },
-    [commitMutation, editor],
+    [commitMutation, egressEditor, t],
+  );
+  const submitRouteOffer = useCallback(
+    async (offer: RouteOffer) => {
+      if (!routeOfferEditor) return;
+      await commitMutation({
+        operation: "replaceEgressOffer",
+        id: routeOfferEditor.entryId,
+        offer,
+      });
+      setRouteOfferEditor(null);
+    },
+    [commitMutation, routeOfferEditor],
+  );
+  const submitAccessToken = useCallback(
+    async (access: { mode: TunnelAccessMode; token?: string }) => {
+      if (!accessTokenEditor) return;
+      const result = await commitMutation(
+        rotateTokenMutation({ id: accessTokenEditor.entryId, access }),
+      );
+      if (result.oneTimeToken) {
+        setEditorResult({
+          value: result.oneTimeToken,
+          copied: false,
+          error: null,
+        });
+      } else {
+        setAccessTokenEditor(null);
+      }
+    },
+    [accessTokenEditor, commitMutation],
   );
   const deleteIngress = useCallback(
     async (entry: TunnelIngressState) => {
       if (
         await confirmDialog({
-          title: `Delete ${entry.name}?`,
-          message: "Existing egresses will stop forwarding requests.",
-          confirmLabel: "Delete",
+          title: t("settings.tunnel.delete.ingressTitle", { name: entry.name }),
+          message: t("settings.tunnel.delete.ingressMessage"),
+          confirmLabel: t("settings.tunnel.actions.delete"),
           destructive: true,
         })
       ) {
         await runMutation({ operation: "deleteIngress", id: entry.id });
       }
     },
-    [runMutation],
+    [runMutation, t],
   );
   const deleteEgress = useCallback(
     async (entry: TunnelEgressState) => {
       if (
         await confirmDialog({
-          title: `Delete ${entry.name}?`,
-          message: "The listener will be removed.",
-          confirmLabel: "Delete",
+          title: t("settings.tunnel.delete.egressTitle", { name: entry.name }),
+          message: t("settings.tunnel.delete.egressMessage"),
+          confirmLabel: t("settings.tunnel.actions.delete"),
           destructive: true,
         })
       ) {
         await runMutation({ operation: "deleteEgress", id: entry.id });
       }
     },
-    [runMutation],
+    [runMutation, t],
   );
   const getOffer = useCallback(
     async (entry: TunnelIngressState) => {
@@ -705,7 +865,6 @@ export function TunnelPage({ serverId }: { serverId: string }) {
         const result = await exportOffer(entry.id);
         setCopyValue({
           ownerId: entry.id,
-          label: "Route Offer",
           value: JSON.stringify(result.offer),
           copied: false,
           error: null,
@@ -718,23 +877,29 @@ export function TunnelPage({ serverId }: { serverId: string }) {
     },
     [exportOffer],
   );
-  const openCreateIngress = useCallback(() => setEditor({ kind: "ingress", mode: "create" }), []);
-  const openCreateEgress = useCallback(() => {
-    setEditor(null);
-    setSelectingEgressSource(true);
-  }, []);
-  const importEgress = useCallback(() => {
-    setSelectingEgressSource(false);
-    setEditor({ kind: "egress", mode: "create" });
-  }, []);
-  const useSelectedOffer = useCallback((offer: RouteOffer) => {
-    setSelectingEgressSource(false);
-    setEditor({ kind: "egress", mode: "create", offer });
-  }, []);
   const closeEditor = useCallback(() => {
-    setEditor(null);
+    setIngressEditor(null);
+    setEgressEditor(null);
+    setRouteOfferEditor(null);
+    setAccessTokenEditor(null);
     setEditorResult(null);
     setSelectingEgressSource(false);
+  }, []);
+  const openCreateIngress = useCallback(() => {
+    closeEditor();
+    setIngressEditor({ mode: "create" });
+  }, [closeEditor]);
+  const openCreateEgress = useCallback(() => {
+    closeEditor();
+    setSelectingEgressSource(true);
+  }, [closeEditor]);
+  const importEgress = useCallback(() => {
+    closeEditor();
+    setEgressEditor({ mode: "create" });
+  }, [closeEditor]);
+  const useSelectedOffer = useCallback((offer: RouteOffer) => {
+    setSelectingEgressSource(false);
+    setEgressEditor({ mode: "create", offer });
   }, []);
   const toggleIngress = useCallback(
     (entry: TunnelIngressState) => {
@@ -743,8 +908,11 @@ export function TunnelPage({ serverId }: { serverId: string }) {
     [runMutation],
   );
   const editIngress = useCallback(
-    (entry: TunnelIngressState) => setEditor({ kind: "ingress", mode: "edit", entry }),
-    [],
+    (entry: TunnelIngressState) => {
+      closeEditor();
+      setIngressEditor({ mode: "edit", entry });
+    },
+    [closeEditor],
   );
   const exportIngressOffer = useCallback(
     (entry: TunnelIngressState) => void getOffer(entry),
@@ -754,16 +922,16 @@ export function TunnelPage({ serverId }: { serverId: string }) {
     async (entry: TunnelIngressState) => {
       if (
         await confirmDialog({
-          title: `Rotate secret for ${entry.name}?`,
-          message: "Existing Route Offers will stop working.",
-          confirmLabel: "Rotate secret",
+          title: t("settings.tunnel.confirm.rotateSecretTitle", { name: entry.name }),
+          message: t("settings.tunnel.confirm.rotateSecretMessage"),
+          confirmLabel: t("settings.tunnel.actions.rotateSecret"),
           destructive: true,
         })
       ) {
         await runMutation({ operation: "rotateIngressSecret", id: entry.id });
       }
     },
-    [runMutation],
+    [runMutation, t],
   );
   const removeIngress = useCallback(
     (entry: TunnelIngressState) => void deleteIngress(entry),
@@ -776,25 +944,36 @@ export function TunnelPage({ serverId }: { serverId: string }) {
     [runMutation],
   );
   const editEgress = useCallback(
-    (entry: TunnelEgressState) => setEditor({ kind: "egress", mode: "edit", entry }),
-    [],
+    (entry: TunnelEgressState) => {
+      closeEditor();
+      setEgressEditor({
+        mode: "edit",
+        entry: { ...entry, accessMode: entry.access.mode },
+      });
+    },
+    [closeEditor],
   );
   const removeEgress = useCallback(
     (entry: TunnelEgressState) => void deleteEgress(entry),
     [deleteEgress],
   );
   const replaceEgressOffer = useCallback(
-    (entry: TunnelEgressState) => setEditor({ kind: "offer", mode: "edit", entry }),
-    [],
+    (entry: TunnelEgressState) => {
+      closeEditor();
+      setRouteOfferEditor({ entryId: entry.id });
+    },
+    [closeEditor],
   );
   const rotateEgressToken = useCallback(
-    (entry: TunnelEgressState) =>
-      setEditor({
-        kind: "token",
-        mode: "edit",
-        entry: { ...entry, accessMode: entry.access.mode },
-      }),
-    [],
+    (entry: TunnelEgressState) => {
+      closeEditor();
+      setAccessTokenEditor({
+        entryId: entry.id,
+        entryName: entry.name,
+        accessMode: entry.access.mode,
+      });
+    },
+    [closeEditor],
   );
   const copy = useCallback(async () => {
     if (!copyValue) return;
@@ -815,14 +994,15 @@ export function TunnelPage({ serverId }: { serverId: string }) {
     }
   }, [editorResult]);
 
-  if (!connected) return <Alert variant="warning" title="Tunnel host is offline" />;
-  if (!supported) return <Alert variant="warning" title="Update this Host to use Tunnel" />;
-  if (state.isLoading) return <Alert title="Loading Tunnel…" />;
+  if (!connected)
+    return <Alert variant="warning" title={t("settings.tunnel.states.hostOffline")} />;
+  if (!supported) return <Alert variant="warning" title={t("settings.tunnel.states.updateHost")} />;
+  if (state.isLoading) return <Alert title={t("settings.tunnel.states.loading")} />;
   if (state.isError)
     return (
       <Alert
         variant="error"
-        title="Tunnel could not load"
+        title={t("settings.tunnel.states.loadFailed")}
         description={errorMessage(state.error)}
       />
     );
@@ -830,23 +1010,23 @@ export function TunnelPage({ serverId }: { serverId: string }) {
 
   return (
     <View>
-      <SettingsSection title="Tunnel">
+      <SettingsSection title={t("settings.hostSections.tunnel")}>
         {feedback ? <Alert variant={feedback.kind} title={feedback.message} /> : null}
         <View style={settingsStyles.card}>
           <View style={styles.row}>
-            <Text style={settingsStyles.rowTitle}>Relay</Text>
+            <Text style={settingsStyles.rowTitle}>{t("settings.tunnel.labels.relay")}</Text>
             <StatusBadge
-              label={state.data.relayStatus}
+              label={t(STATUS_KEYS[state.data.relayStatus])}
               variant={statusVariant(state.data.relayStatus)}
             />
           </View>
         </View>
       </SettingsSection>
       <SettingsSection
-        title="Ingress"
+        title={t("settings.tunnel.ingress")}
         trailing={
           <Button size="sm" onPress={openCreateIngress} disabled={pending}>
-            Add ingress
+            {t("settings.tunnel.actions.addIngress")}
           </Button>
         }
       >
@@ -866,19 +1046,19 @@ export function TunnelPage({ serverId }: { serverId: string }) {
             />
           ))}
           {!state.data.ingresses.length ? (
-            <Text style={settingsStyles.rowHint}>No ingress configured</Text>
+            <Text style={settingsStyles.rowHint}>{t("settings.tunnel.empty.noIngress")}</Text>
           ) : null}
         </View>
       </SettingsSection>
       <SettingsSection
-        title="Egress"
+        title={t("settings.tunnel.egress")}
         trailing={
           <View style={styles.actions}>
             <Button variant="outline" size="sm" onPress={importEgress} disabled={pending}>
-              Import egress
+              {t("settings.tunnel.actions.importEgress")}
             </Button>
             <Button size="sm" onPress={openCreateEgress} disabled={pending}>
-              Add egress
+              {t("settings.tunnel.actions.addEgress")}
             </Button>
           </View>
         }
@@ -897,35 +1077,64 @@ export function TunnelPage({ serverId }: { serverId: string }) {
             />
           ))}
           {!state.data.egresses.length ? (
-            <Text style={settingsStyles.rowHint}>No egress configured</Text>
+            <Text style={settingsStyles.rowHint}>{t("settings.tunnel.empty.noEgress")}</Text>
           ) : null}
         </View>
       </SettingsSection>
       {selectingEgressSource ? (
         <EgressSourcePicker pending={pending} onCancel={closeEditor} onSelect={useSelectedOffer} />
       ) : null}
-      {editor && !editorResult ? (
-        <TunnelEntryEditor
-          key={`${editor.kind}:${editor.mode}:${editor.entry?.id ?? "new"}`}
-          snapshot={editor}
+      {ingressEditor && !editorResult ? (
+        <IngressEditor
+          key={`${ingressEditor.mode}:${ingressEditor.entry?.id ?? "new"}`}
+          snapshot={ingressEditor}
           pending={pending}
           onCancel={closeEditor}
-          onSubmit={submitEditor}
+          onSubmit={submitIngress}
+        />
+      ) : null}
+      {egressEditor && !editorResult ? (
+        <EgressEditor
+          key={`${egressEditor.mode}:${egressEditor.entry?.id ?? "new"}`}
+          snapshot={egressEditor}
+          pending={pending}
+          onCancel={closeEditor}
+          onSubmit={submitEgress}
+        />
+      ) : null}
+      {routeOfferEditor && !editorResult ? (
+        <RouteOfferEditor
+          key={routeOfferEditor.entryId}
+          snapshot={routeOfferEditor}
+          pending={pending}
+          onCancel={closeEditor}
+          onSubmit={submitRouteOffer}
+        />
+      ) : null}
+      {accessTokenEditor && !editorResult ? (
+        <AccessTokenEditor
+          key={accessTokenEditor.entryId}
+          snapshot={accessTokenEditor}
+          pending={pending}
+          onCancel={closeEditor}
+          onSubmit={submitAccessToken}
         />
       ) : null}
       {editorResult ? (
         <View style={[settingsStyles.card, styles.editor]}>
           <Alert
-            title={`${editorResult.label} ready`}
+            title={t("settings.tunnel.result.title")}
             description={editorResult.error ?? editorResult.value}
             variant={editorResult.error ? "error" : "default"}
           >
             <Button size="sm" onPress={copyEditorResult}>
-              {editorResult.copied ? "Copied" : "Copy"}
+              {editorResult.copied
+                ? t("settings.tunnel.actions.copied")
+                : t("settings.tunnel.actions.copy")}
             </Button>
           </Alert>
           <Button variant="outline" size="sm" onPress={closeEditor}>
-            Done
+            {t("settings.tunnel.actions.done")}
           </Button>
         </View>
       ) : null}

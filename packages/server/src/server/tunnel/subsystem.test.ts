@@ -100,6 +100,39 @@ describe("TunnelSubsystem", () => {
     expect(result.oneTimeToken).toBe("test-token-123");
   });
 
+  it("rejects listener hosts outside the supported scopes", async () => {
+    const ingress = await subsystem.createIngress({
+      name: "Backend",
+      targetOrigin: "http://localhost:3000",
+    });
+    const offer = await subsystem.exportRouteOffer(ingress.state.ingresses[0].id);
+
+    await expect(
+      subsystem.createEgress({
+        name: "Unsupported listener",
+        listen: { host: "127.0.0.2", port: 0 },
+        offer,
+        access: { mode: "none" },
+      }),
+    ).rejects.toThrow("Listener host must be 127.0.0.1 or 0.0.0.0");
+    expect(subsystem.getState().egresses).toEqual([]);
+
+    const created = await subsystem.createEgress({
+      name: "Supported listener",
+      listen: { host: "127.0.0.1", port: 0 },
+      offer,
+      access: { mode: "none" },
+    });
+    const original = created.state.egresses[0];
+    await expect(
+      subsystem.updateEgress({
+        id: original.id,
+        listen: { host: "127.0.0.2", port: original.listen.port },
+      }),
+    ).rejects.toThrow("Listener host must be 127.0.0.1 or 0.0.0.0");
+    expect(subsystem.getState().egresses[0].listen).toEqual(original.listen);
+  });
+
   it("generates a one-time access token without persisting plaintext", async () => {
     const ingressResult = await subsystem.createIngress({
       name: "Generated token target",

@@ -138,4 +138,32 @@ describe("Tunnel config schema", () => {
       expect(result.success).toBe(true);
     }
   });
+
+  it("rejects persisted egress listeners outside the supported scopes", () => {
+    const result = PersistedTunnelConfigSchema.safeParse({
+      egresses: [
+        {
+          id: "egr_1",
+          name: "Test",
+          enabled: true,
+          listen: { host: "127.0.0.2", port: 8080 },
+          offer: {
+            protocolVersion: 1,
+            relayEndpoint: "wss://relay.paseo.sh",
+            relayUseTls: true,
+            tunnelServerId: "tunnel_1",
+            tunnelPublicKeyB64: "key",
+            routeId: "route_1",
+            routeSecret: "secret_1",
+            ingressHostName: "Host",
+            ingressName: "Ingress",
+            suggestedPort: 8000,
+          },
+          access: { mode: "none" },
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
 });

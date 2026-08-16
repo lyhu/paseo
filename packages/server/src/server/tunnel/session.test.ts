@@ -86,4 +86,28 @@ describe("TunnelSession", () => {
       },
     });
   });
+
+  it("rejects unsupported listener hosts at the mutation RPC boundary", async () => {
+    const ingress = await subsystem.createIngress({
+      name: "RPC ingress",
+      targetOrigin: "http://localhost:9600",
+    });
+    const offer = await subsystem.exportRouteOffer(ingress.state.ingresses[0].id);
+
+    await expect(
+      session.dispatch({
+        type: "tunnel.http.entry.mutate.request",
+        requestId: "create-egress-1",
+        mutation: {
+          operation: "createEgress",
+          name: "Unsupported listener",
+          listen: { host: "127.0.0.2", port: 8080 },
+          offer,
+          access: { mode: "none" },
+        },
+      }),
+    ).rejects.toThrow("Listener host must be 127.0.0.1 or 0.0.0.0");
+    expect(messages).toEqual([]);
+    expect(subsystem.getState().egresses).toEqual([]);
+  });
 });

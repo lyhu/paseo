@@ -131,6 +131,28 @@ describe("IngressRuntime", () => {
     await waitForNoDataConnections(runtime);
     peer.close();
   });
+
+  test("settles an invalid-request failure when the peer closes before the error frame", async () => {
+    relay = await createInProcessRelay();
+    const keyPair = generateKeyPair();
+    runtime = new IngressRuntime({
+      relayEndpoint: relay.httpBaseUrl,
+      relayUseTls: false,
+      tunnelServerId: "closing-peer-ingress",
+      tunnelKeyPair: keyPair,
+      routes: [],
+    });
+    await runtime.start();
+    const peer = await connectTunnelClient({
+      relayEndpoint: relay.httpBaseUrl,
+      serverId: "closing-peer-ingress",
+      publicKeyB64: exportPublicKey(keyPair.publicKey),
+    });
+
+    await peer.sendAndTerminate(encodeTunnelFrame({ v: 1, type: "request.end" }));
+
+    await waitForNoDataConnections(runtime);
+  });
 });
 
 async function connectTunnelClient(input: {
@@ -142,6 +164,7 @@ async function connectTunnelClient(input: {
   channel: EncryptedChannel;
   nextControlFrame: Promise<TunnelFrame>;
   nextErrorFrame: Promise<TunnelFrame>;
+  sendAndTerminate(frame: string): Promise<void>;
   close(): void;
 }> {
   const ws = new WebSocket(
@@ -181,7 +204,16 @@ async function connectTunnelClient(input: {
     },
   });
   await opened;
-  return { channel, nextControlFrame, nextErrorFrame, close: () => ws.close() };
+  return {
+    channel,
+    nextControlFrame,
+    nextErrorFrame,
+    async sendAndTerminate(frame) {
+      await channel.send(frame);
+      ws.terminate();
+    },
+    close: () => ws.close(),
+  };
 }
 
 function websocketTransport(ws: WebSocket): Transport {

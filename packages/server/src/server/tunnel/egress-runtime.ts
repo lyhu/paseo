@@ -19,9 +19,10 @@ import {
 import { rawHeadersToTuples, sanitizeTunnelHeaders, tuplesToRawHeaders } from "./http-headers.js";
 import { randomUUID, createHash, timingSafeEqual } from "node:crypto";
 import { buildTunnelRelayUrl } from "./relay-url.js";
+import type { TunnelListenHost } from "./config.js";
 
 export interface EgressRuntimeOptions {
-  listen: { host: string; port: number };
+  listen: { host: TunnelListenHost; port: number };
   relayEndpoint: string;
   relayUseTls: boolean;
   tunnelServerId: string;
@@ -54,7 +55,7 @@ interface DataConnection {
 
 export class EgressRuntime {
   #server: Server;
-  #listen: { host: string; port: number };
+  #listen: { host: TunnelListenHost; port: number };
   #relayEndpoint: string;
   #relayUseTls: boolean;
   #tunnelServerId: string;

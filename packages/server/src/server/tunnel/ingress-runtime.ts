@@ -453,10 +453,17 @@ export class IngressRuntime {
   }
 
   async #failConnection(conn: DataConnection, code: TunnelErrorCode): Promise<void> {
-    if (conn.channel.isOpen()) {
-      await conn.channel.send(encodeTunnelFrame({ v: 1, type: "error", code }));
+    try {
+      if (conn.ws.readyState === WebSocket.OPEN && conn.channel.isOpen()) {
+        await conn.channel.send(encodeTunnelFrame({ v: 1, type: "error", code }));
+      }
+    } catch {
+      // The peer can close after the readyState check while the error frame is in flight.
+    } finally {
+      if (conn.ws.readyState === WebSocket.OPEN || conn.ws.readyState === WebSocket.CONNECTING) {
+        conn.ws.close(1000, "tunnel error");
+      }
     }
-    conn.ws.close(1000, "tunnel error");
   }
 
   #buildRelayUrl(role: "client" | "server", connectionId?: string): string {

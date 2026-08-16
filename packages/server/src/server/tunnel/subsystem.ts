@@ -6,6 +6,7 @@ import {
   type PersistedIngress,
   type PersistedEgress,
   type RouteOffer,
+  type TunnelListenHost,
   createTunnelIdentity,
 } from "./config.js";
 import type {
@@ -257,6 +258,7 @@ export class TunnelSubsystem {
   }
 
   async #createEgress(options: CreateEgressOptions): Promise<MutationResult> {
+    const listenHost = this.#requireListenHost(options.listen.host);
     const current = this.#loadConfig();
     if (current.daemon?.tunnel?.egresses?.some((egress) => egress.name === options.name)) {
       throw new Error("Egress name already exists");
@@ -269,7 +271,7 @@ export class TunnelSubsystem {
 
     const egressId = this.#generateId("egr");
     const runtime = new EgressRuntime({
-      listen: options.listen,
+      listen: { host: listenHost, port: options.listen.port },
       relayEndpoint: options.offer.relayEndpoint,
       relayUseTls: options.offer.relayUseTls,
       tunnelServerId: options.offer.tunnelServerId,
@@ -294,7 +296,7 @@ export class TunnelSubsystem {
       id: egressId,
       name: options.name,
       enabled: true,
-      listen: { host: options.listen.host, port: actualPort },
+      listen: { host: listenHost, port: actualPort },
       offer: options.offer,
       access: {
         mode: options.access.mode,
@@ -314,6 +316,9 @@ export class TunnelSubsystem {
   }
 
   async #updateEgress(options: UpdateEgressOptions): Promise<MutationResult> {
+    const listen = options.listen
+      ? { host: this.#requireListenHost(options.listen.host), port: options.listen.port }
+      : undefined;
     const config = this.#loadConfig();
     const previousConfig = structuredClone(config);
     const egress = config.daemon?.tunnel?.egresses?.find((e) => e.id === options.id);
@@ -329,7 +334,7 @@ export class TunnelSubsystem {
     }
 
     if (options.name !== undefined) egress.name = options.name;
-    if (options.listen !== undefined) egress.listen = options.listen;
+    if (listen !== undefined) egress.listen = listen;
     if (options.enabled !== undefined) egress.enabled = options.enabled;
 
     await this.#commitEgressConfig(config, previousConfig, options.id);
@@ -589,6 +594,11 @@ export class TunnelSubsystem {
 
   #hashToken(token: string): string {
     return createHash("sha256").update(token).digest("hex");
+  }
+
+  #requireListenHost(host: string): TunnelListenHost {
+    if (host === "127.0.0.1" || host === "0.0.0.0") return host;
+    throw new Error("Listener host must be 127.0.0.1 or 0.0.0.0");
   }
 
   #loadConfig(): PersistedConfig {

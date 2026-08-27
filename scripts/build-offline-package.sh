@@ -94,10 +94,10 @@ done
 # Also bundle @getpaseo/server for CLI's open command
 echo "  -> Bundling @getpaseo/server..."
 mkdir -p "$PKG_DIR/local-packages/server"
-cat > "$PKG_DIR/local-packages/server/package.json" << 'SERVERPKG'
+cat > "$PKG_DIR/local-packages/server/package.json" << SERVERPKG
 {
   "name": "@getpaseo/server",
-  "version": "0.4.0",
+  "version": "${VERSION}",
   "private": true,
   "type": "module",
   "exports": {
@@ -143,7 +143,7 @@ for (const k of Object.keys(merged)) {
 }
 const pkg = {
   name: '@getpaseo/offline-server',
-  version: '0.4.0',
+  version: srv.version,
   private: true,
   type: 'module',
   description: 'Paseo daemon offline package (default port 6768, PASEO_HOME=~/.paseo-tunnel, CLI renamed to paseo-tunnel)',
@@ -155,7 +155,7 @@ const pkg = {
     '@getpaseo/protocol': 'file:./local-packages/protocol',
     '@getpaseo/relay': 'file:./local-packages/relay',
     '@getpaseo/server': 'file:./local-packages/server',
-    '@paseo/plugin': 'file:./local-packages/plugin',
+    '@getpaseo/plugin': 'file:./local-packages/plugin',
     ...merged,
   },
 };

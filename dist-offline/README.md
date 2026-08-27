@@ -9,14 +9,14 @@
 ## 安装
 
 ```bash
-# 解压
-tar xzf paseo-server-0.4.0-darwin-arm64.tar.gz
+# 解压（以当前平台版本为例）
+tar xzf paseo-server-0.6.1-darwin-arm64.tar.gz
 
 # 全局安装
 cd package && npm install -g .
 
 # 验证安装
-paseo --version
+paseo-tunnel --version
 ```
 
 ## 启动
@@ -24,7 +24,7 @@ paseo --version
 ### 本地开发（仅 web UI）
 
 ```bash
-paseo daemon start --web-ui --port 6768 --foreground
+paseo-tunnel daemon start --web-ui --port 6768 --foreground
 ```
 
 浏览器打开 http://127.0.0.1:6768
@@ -32,25 +32,25 @@ paseo daemon start --web-ui --port 6768 --foreground
 ### 远程服务器（带 relay，供手机 App 连接）
 
 ```bash
-paseo daemon start --web-ui --relay --port 6768 --foreground
+paseo-tunnel daemon start --web-ui --relay --port 6768 --foreground
 ```
 
 ### 后台运行
 
 ```bash
-paseo daemon start --web-ui --relay --port 6768
+paseo-tunnel daemon start --web-ui --relay --port 6768
 ```
 
 查看状态:
 
 ```bash
-paseo daemon status
+paseo-tunnel daemon status
 ```
 
 停止:
 
 ```bash
-paseo daemon stop
+paseo-tunnel daemon stop
 ```
 
 ## 数据目录

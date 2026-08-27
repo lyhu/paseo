@@ -1928,6 +1928,16 @@ export class Session {
     this.scopes = [...scopes];
   }
 
+  private dispatchExtensionMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    return (
+      this.tunnelSession?.dispatch(msg) ??
+      this.dispatchWorkspaceLabelMessage(msg) ??
+      this.dispatchOrchestrationSkillsMessage(msg) ??
+      this.dispatchPluginDirectoryMessage(msg) ??
+      this.dispatchPluginMessage(msg)
+    );
+  }
+
   private async dispatchInboundMessage(msg: SessionInboundMessage, source?: object): Promise<void> {
     const promise =
       this.dispatchVoiceAndControlMessage(msg) ??
@@ -1937,16 +1947,12 @@ export class Session {
       this.dispatchHubExecutionMessage(msg) ??
       this.dispatchAgentLifecycleMessage(msg) ??
       this.dispatchAgentConfigMessage(msg) ??
-      this.tunnelSession?.dispatch(msg) ??
+      this.dispatchExtensionMessage(msg) ??
       this.dispatchCheckoutMessage(msg) ??
       this.dispatchWorkspaceRecoveryMessage(msg) ??
-      this.dispatchWorkspaceLabelMessage(msg) ??
       this.dispatchWorkspaceAndProjectMessage(msg) ??
       this.dispatchWorkspaceFileMessage(msg, source) ??
       this.dispatchProviderMessage(msg) ??
-      this.dispatchOrchestrationSkillsMessage(msg) ??
-      this.dispatchPluginDirectoryMessage(msg) ??
-      this.dispatchPluginMessage(msg) ??
       this.dispatchTerminalMessage(msg) ??
       this.dispatchScheduleMessage(msg) ??
       this.dispatchMiscMessage(msg);

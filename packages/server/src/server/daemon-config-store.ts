@@ -9,6 +9,7 @@ import {
   MutableDaemonConfigPatchSchema,
 } from "@getpaseo/protocol/messages";
 import { PersistedTunnelConfigSchema, type PersistedTunnelConfig } from "./tunnel/config.js";
+import type { AgentSkillSelection } from "@getpaseo/protocol/messages";
 
 export type { MutableDaemonConfig, MutableDaemonConfigPatch } from "@getpaseo/protocol/messages";
 
@@ -28,6 +29,7 @@ interface SupportedMutableConfigPatch {
   appendSystemPrompt?: string;
   terminalProfiles?: MutableDaemonConfig["terminalProfiles"];
   agentProfiles?: MutableDaemonConfig["agentProfiles"];
+  skills?: MutableDaemonConfig["skills"];
   pluginsEnabled?: boolean;
   plugins?: MutableDaemonConfig["plugins"];
 }
@@ -186,6 +188,7 @@ const RELOADABLE_PATHS = [
   "agents.providers",
   "agents.catalogRefreshTimeoutMs",
   "agents.metadataGeneration",
+  "agents.skills.selection",
   "pluginsEnabled",
 ] as const;
 
@@ -208,6 +211,7 @@ const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["agents.providers", "providers"],
   ["agents.catalogRefreshTimeoutMs", "catalogRefreshTimeoutMs"],
   ["agents.metadataGeneration", "metadataGeneration"],
+  ["agents.skills.selection", "skills.selection"],
   ["pluginsEnabled", "pluginsEnabled"],
 ]);
 
@@ -352,6 +356,14 @@ export class DaemonConfigStore {
 
   public patch(partial: MutableDaemonConfigPatch): MutableDaemonConfig {
     const parsedPatch = pickSupportedPatchFields(MutableDaemonConfigPatchSchema.parse(partial));
+    return this.applySupportedPatch(parsedPatch);
+  }
+
+  public setAgentSkillSelection(selection: AgentSkillSelection): MutableDaemonConfig {
+    return this.applySupportedPatch({ skills: { selection } });
+  }
+
+  private applySupportedPatch(parsedPatch: SupportedMutableConfigPatch): MutableDaemonConfig {
     if (parsedPatch.relay?.enabled !== undefined && !this.relayEnabledMutable) {
       throw new Error(
         "Relay is controlled by a daemon launch override. Remove PASEO_RELAY_ENABLED or the relay CLI flag before changing it here.",
@@ -360,6 +372,9 @@ export class DaemonConfigStore {
     const { removeProviders = [], ...configPatch } = parsedPatch;
     const removedProviders = Array.from(new Set(removeProviders));
     const merged = deepMerge(this.current, configPatch);
+    if (parsedPatch.skills?.selection !== undefined) {
+      merged.skills = { selection: parsedPatch.skills.selection };
+    }
     if (parsedPatch.plugins !== undefined) merged.plugins = parsedPatch.plugins;
     const next = MutableDaemonConfigSchema.parse(
       omitMetadataGenerationProvidersFromConfig(
@@ -601,6 +616,7 @@ function mergeMutableAgentPatch(
   if (
     patch.providers === undefined &&
     patch.metadataGeneration === undefined &&
+    patch.skills === undefined &&
     removeProviders.length === 0
   ) {
     return persistedAgents;
@@ -627,6 +643,10 @@ function mergeMutableAgentPatch(
         (entry) => !removed.has(entry.provider),
       ),
     };
+  }
+
+  if (patch.skills?.selection !== undefined) {
+    next["skills"] = { selection: patch.skills.selection };
   }
 
   return Object.keys(next).length > 0 ? (next as PersistedConfig["agents"]) : undefined;

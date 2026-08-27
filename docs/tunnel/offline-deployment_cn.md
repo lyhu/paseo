@@ -48,13 +48,14 @@ Ingress（远程服务器）和 Egress（本地工作站）使用完全相同的
 
 ```bash
 # 安装（需要 Node.js 18+）
-npm install -g ./paseo-server-0.4.0-linux-x64.tar.gz
+tar xzf ./paseo-server-0.6.1-linux-x64.tar.gz
+cd package && npm install -g . && cd ..
 
 # 启动 daemon（远程服务器，带 relay）
-paseo daemon start --web-ui --relay --port 6768 --foreground
+paseo-tunnel daemon start --web-ui --relay --port 6768 --foreground
 
 # 启动 daemon（本地工作站，仅 web UI）
-paseo daemon start --web-ui --port 6768 --foreground
+paseo-tunnel daemon start --web-ui --port 6768 --foreground
 
 # 打开浏览器
 open http://127.0.0.1:6768
@@ -63,24 +64,24 @@ open http://127.0.0.1:6768
 ## 包内容
 
 ```
-paseo-server-<version>-<platform>-<arch>.tar.gz（压缩后约 130 MB）
+paseo-server-<version>-<platform>-<arch>.tar.gz（压缩后约 150 MB）
   ├── package/
   │   ├── package.json              # 包装 package.json，用于 npm install -g
-  │   ├── package-lock.json
-  │   ├── bin/paseo               # CLI 入口
-  │   ├── dist/                   # 编译后的 server 代码 + web UI
+  │   ├── bin/paseo-tunnel          # CLI 入口（隔离 PASEO_HOME=~/.paseo-tunnel）
+  │   ├── dist/                     # 编译后的 server 代码 + web UI
   │   │   ├── server/
-  │   │   │   ├── server/         # Daemon 代码
-  │   │   │   └── web-ui/        # Web UI 静态资源
-  │   │   └── scripts/           # Supervisor 入口
-  │   ├── cli-dist/              # 编译后的 CLI 代码
-  │   ├── local-packages/        # 打包的 workspace 依赖
+  │   │   │   ├── server/           # Daemon 代码
+  │   │   │   └── web-ui/          # Web UI 静态资源
+  │   │   └── scripts/             # Supervisor 入口
+  │   ├── cli-dist/                # 编译后的 CLI 代码
+  │   ├── local-packages/          # 打包的 workspace 依赖
   │   │   ├── protocol/
   │   │   ├── client/
   │   │   ├── highlight/
   │   │   ├── relay/
-  │   │   └── plugin/
-  │   └── node_modules/         # 精简后的生产依赖
+  │   │   ├── plugin/
+  │   │   └── server/
+  │   └── node_modules/           # 生产依赖
 ```
 
 ## 构建

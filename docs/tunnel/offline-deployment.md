@@ -54,13 +54,14 @@ Remote Server (Ingress) / Local Workstation (Egress)
 
 ```bash
 # Install (requires Node.js 18+)
-npm install -g ./paseo-server-0.4.0-linux-x64.tar.gz
+tar xzf ./paseo-server-0.6.1-linux-x64.tar.gz
+cd package && npm install -g . && cd ..
 
 # Start daemon (remote server, with relay)
-paseo daemon start --web-ui --relay --port 6768 --foreground
+paseo-tunnel daemon start --web-ui --relay --port 6768 --foreground
 
 # Start daemon (local workstation, web UI only)
-paseo daemon start --web-ui --port 6768 --foreground
+paseo-tunnel daemon start --web-ui --port 6768 --foreground
 
 # Open browser
 open http://127.0.0.1:6768
@@ -71,15 +72,15 @@ open http://127.0.0.1:6768
 ```ini
 # /etc/systemd/system/paseo-daemon.service
 [Unit]
-Description=Paseo Daemon
+Description=Paseo Daemon (tunnel)
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/paseo daemon start --foreground --web-ui --relay --port 6768
+ExecStart=/usr/local/bin/paseo-tunnel daemon start --foreground --web-ui --relay --port 6768
 Restart=always
 User=paseo
-Environment=PASEO_HOME=/var/lib/paseo
+Environment=PASEO_HOME=/var/lib/paseo-tunnel
 
 [Install]
 WantedBy=multi-user.target
@@ -97,32 +98,32 @@ Merge into modified branch (server/ + cli/ only)
 Rebuild offline package
   │
   ▼
-Remote server: npm install -g ./new-package.tar.gz && restart daemon
-Local workstation: npm install -g ./new-package.tar.gz && restart daemon
+Remote server: unpack & npm install -g . && restart daemon
+Local workstation: unpack & npm install -g . && restart daemon
 Mobile: auto-updates via App Store (official version, no action needed)
 ```
 
 ### Package Contents
 
 ```
-paseo-server-<version>-<platform>-<arch>.tar.gz (~130 MB compressed)
+paseo-server-<version>-<platform>-<arch>.tar.gz (~150 MB compressed)
   ├── package/
   │   ├── package.json              # Wrapper package.json for npm install -g
-  │   ├── package-lock.json
-  │   ├── bin/paseo               # CLI entry point
-  │   ├── dist/                   # Compiled server code + web UI
+  │   ├── bin/paseo-tunnel          # CLI entry point (isolated PASEO_HOME=~/.paseo-tunnel)
+  │   ├── dist/                     # Compiled server code + web UI
   │   │   ├── server/
-  │   │   │   ├── server/         # Daemon code
-  │   │   │   └── web-ui/        # Web UI static assets
-  │   │   └── scripts/           # Supervisor entrypoint
-  │   ├── cli-dist/              # Compiled CLI code
-  │   ├── local-packages/        # Bundled workspace packages
+  │   │   │   ├── server/           # Daemon code
+  │   │   │   └── web-ui/          # Web UI static assets
+  │   │   └── scripts/             # Supervisor entrypoint
+  │   ├── cli-dist/                # Compiled CLI code
+  │   ├── local-packages/          # Bundled workspace packages
   │   │   ├── protocol/
   │   │   ├── client/
   │   │   ├── highlight/
   │   │   ├── relay/
-  │   │   └── plugin/
-  │   └── node_modules/         # Pruned production dependencies
+  │   │   ├── plugin/
+  │   │   └── server/
+  │   └── node_modules/           # Production dependencies
 ```
 
 ### Build Script
@@ -137,6 +138,7 @@ The offline package is built by `scripts/build-offline-package.sh`:
 ```
 
 The build script:
+
 1. Builds all workspace dependencies (protocol, client, highlight, plugin, relay)
 2. Builds the server (TypeScript compilation)
 3. Builds the CLI
@@ -148,15 +150,15 @@ The build script:
 
 ### What's Stripped vs Official
 
-| Component | Official | Offline Package |
-|-----------|----------|----------------|
-| Default port | 6767 | 6768 |
-| Speech/voice | sherpa-onnx-node, speech config | Removed |
-| Web UI | Bundled | Bundled (same) |
-| Agent providers | All | All (same) |
-| Relay | Supported | Supported (same) |
-| Protocol | Standard | Standard (compatible) |
-| Docker | Supported | Not required |
+| Component       | Official                        | Offline Package       |
+| --------------- | ------------------------------- | --------------------- |
+| Default port    | 6767                            | 6768                  |
+| Speech/voice    | sherpa-onnx-node, speech config | Removed               |
+| Web UI          | Bundled                         | Bundled (same)        |
+| Agent providers | All                             | All (same)            |
+| Relay           | Supported                       | Supported (same)      |
+| Protocol        | Standard                        | Standard (compatible) |
+| Docker          | Supported                       | Not required          |
 
 ### Security
 

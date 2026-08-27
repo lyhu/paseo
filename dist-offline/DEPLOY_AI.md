@@ -61,6 +61,7 @@ paseo-tunnel daemon status
 ```
 
 **预期输出**包含：
+
 - `Local Daemon: running`（绿色）
 - `Home: /root/.paseo-tunnel`（或 `~/.paseo-tunnel`）
 - `Listen: ws://127.0.0.1:6768`
@@ -202,12 +203,12 @@ paseo-tunnel daemon start --web-ui --port 6789 --foreground
 
 ## 验证清单
 
-| 检查项 | 命令 | 预期结果 |
-|--------|------|----------|
-| CLI 已安装 | `which paseo-tunnel` | 返回 paseo-tunnel 路径 |
-| Daemon 运行中 | `paseo-tunnel daemon status` | `Local Daemon: running` |
-| Web UI | `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:6768/` | `200` |
-| 健康检查 | `curl -s http://127.0.0.1:6768/api/health` | `{"status":"ok",...}` |
-| 数据目录 | `paseo-tunnel daemon status` | `Home: .../.paseo-tunnel` |
-| Agent 发现 | `paseo-tunnel daemon status` | 列出可用 agent |
-| Relay（如启用） | `paseo-tunnel daemon status` | 显示 relay 端点 |
+| 检查项          | 命令                                                            | 预期结果                  |
+| --------------- | --------------------------------------------------------------- | ------------------------- |
+| CLI 已安装      | `which paseo-tunnel`                                            | 返回 paseo-tunnel 路径    |
+| Daemon 运行中   | `paseo-tunnel daemon status`                                    | `Local Daemon: running`   |
+| Web UI          | `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:6768/` | `200`                     |
+| 健康检查        | `curl -s http://127.0.0.1:6768/api/health`                      | `{"status":"ok",...}`     |
+| 数据目录        | `paseo-tunnel daemon status`                                    | `Home: .../.paseo-tunnel` |
+| Agent 发现      | `paseo-tunnel daemon status`                                    | 列出可用 agent            |
+| Relay（如启用） | `paseo-tunnel daemon status`                                    | 显示 relay 端点           |

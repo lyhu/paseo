@@ -95,3 +95,4 @@ app.json
 /docker/tunnel
 # dist-offline: only ignore tarballs, keep docs
 /dist-offline/*.tar.gz
+/dist-offline/package

@@ -1,0 +1,25 @@
+{
+  "name": "paseo-conversation-view",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sticky current question inside Paseo native conversations",
+  "files": [
+    "paseo-plugin.json",
+    "index.client.tsx",
+    "client/",
+    "shared/"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@getpaseo/client": "0.10.3",
+    "@getpaseo/plugin": "0.10.3",
+    "@getpaseo/protocol": "0.10.3",
+    "@types/node": "^22.20.5",
+    "@types/react": "~19.1.0",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "typescript": "^5.9.3"
+  }
+}
